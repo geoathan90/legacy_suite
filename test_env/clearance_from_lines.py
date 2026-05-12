@@ -171,6 +171,9 @@ def write_points_file(path, points, decimals=8):
         f.write(points_to_autocad_text(points, decimals=decimals))
         f.write("\n")
 
+# with open('output.txt', 'w') as f:
+#     for x, y in points:
+#         f.write(f"{x:.6f},{y:.6f}\n")
 
 def distance_3d(p, q):
     return sqrt(
@@ -357,13 +360,13 @@ def main():
     w = 1.303
     N = 500
 
-    gantry_height = 39.90
+    gantry_height = 28.50
     gantry_elevation = 0
     gantry = gantry_height + gantry_elevation 
     
-    low_bridge = 42.39
-    mid_bridge = 42.39 + 3.9
-    high_bridge = 42.39 +3.9*2
+    low_bridge = 31.03
+    mid_bridge = low_bridge + 3.9
+    high_bridge = mid_bridge + 3.9
     
     tower_elevation = 0
 
@@ -374,11 +377,11 @@ def main():
     high = high_bridge + tower_elevation + adjustment
 
     sag_overrides=[None, None]
-    #sag_overrides=[3.09, 3.11]
+    sag_overrides=[0.93, 1.09]
 
     result = build_case(
         input_path= HERE/"lines_input.txt",
-        diagram_names=["3289", "3289"],  #31858 = 700, 31189 = 1000
+        diagram_names=["3289", "3136"],  #31858 = 700, 31189 = 1000
         temperature=30,
         z_starts=[mid, high],
         z_ends=[gantry, gantry],
