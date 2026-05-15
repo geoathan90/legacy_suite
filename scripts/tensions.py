@@ -177,3 +177,17 @@ def monopleyro_left(S, dh, H=H1, w=w, *, invalid="nan"):
 def synoliko_katakoryfo(S_l,dh_l,H_l,w_l,S_r,dh_r,H_r,w_r):
     return distance_lowest_point_r(S_r,dh_r,H_r,w_r) + distance_lowest_point_l(S_l,dh_l,H_l,w_l)
 
+def conductor_length(S, Th, w, dh):
+    S = np.asarray(S)
+    H = np.asarray(Th)
+    w = np.asarray(w)
+    dh = np.asarray(dh)
+
+    a = H / w
+    return 2.0 * a * np.sinh(S / (2.0 * a)) * np.cosh(np.arcsinh(dh / (2.0 * a * np.sinh(S / (2.0 * a)))))
+
+if __name__ == "__main__":
+    l = conductor_length(324,2585,1.823,10)
+    print(f"Length: {l:.6f} m")
+
+
