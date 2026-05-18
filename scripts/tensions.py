@@ -184,10 +184,60 @@ def conductor_length(S, Th, w, dh):
     dh = np.asarray(dh)
 
     a = H / w
-    return 2.0 * a * np.sinh(S / (2.0 * a)) * np.cosh(np.arcsinh(dh / (2.0 * a * np.sinh(S / (2.0 * a)))))
+
+    #return 2.0 * a * np.sinh(S / (2.0 * a)) * np.cosh(np.arcsinh(dh / (2.0 * a * np.sinh(S / (2.0 * a)))))
+    # deleted because it was numerically unstable. Kept for posterity.
+
+    level_length = 2.0 * a * np.sinh(S / (2.0 * a))
+
+    return np.hypot(level_length, dh) # essentially the same as sqrt(level_length**2 + dh**2), but better numerically
+    
+    
+    
+def Th_from_length(target_length, S, w, dh, tol=1e-10, max_iter=10000):
+
+    def f(Th):
+        return conductor_length(S, Th, w, dh) - target_length
+    
+    Th_low = 50
+    Th_high = 5000 #w * S**2 / (8.0 * sag(S, Th_low, w))
+
+    # Make sure lower bound is actually on the short-length side
+    while f(Th_low) < 0:
+        Th_low *= 0.5
+
+    # Make sure upper bound is actually on the long-length side
+    while f(Th_high) > 0:
+        Th_high *= 2.0
+
+    for _ in range(max_iter):
+        Th_mid = 0.5 * (Th_low + Th_high)
+        err = f(Th_mid)
+
+        if abs(err) < tol:
+            return Th_mid
+
+        if err > 0:
+            # length too long -> need more tension
+            Th_low = Th_mid
+        else:
+            # length too short -> need less tension
+            Th_high = Th_mid
+
+    return Th_mid
 
 if __name__ == "__main__":
-    l = conductor_length(324,2585,1.823,10)
+    l = conductor_length(283.64,1550,0.769,0)
+
+    extra_length = 0.50
+
+    Th_elongated = Th_from_length(l + extra_length, 283.64, 0.769, 0)
+
+    sag_elongated = sag(283.64, Th_elongated, 0.769)
+
     print(f"Length: {l:.6f} m")
+    print(f"Tension for +{extra_length} m length: {Th_elongated:.2f} kg")
+    print(f"Sag for original length: {sag(283.64, 1550, 0.769):.6f} m") 
+    print(f"Sag for +{extra_length} m length: {sag_elongated:.6f} m")    
 
 
