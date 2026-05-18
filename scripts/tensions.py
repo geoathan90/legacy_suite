@@ -192,8 +192,7 @@ def conductor_length(S, Th, w, dh):
 
     return np.hypot(level_length, dh) # essentially the same as sqrt(level_length**2 + dh**2), but better numerically
     
-    
-    
+        
 def Th_from_length(target_length, S, w, dh, tol=1e-10, max_iter=10000):
 
     def f(Th):
@@ -226,6 +225,7 @@ def Th_from_length(target_length, S, w, dh, tol=1e-10, max_iter=10000):
 
     return Th_mid
 
+
 if __name__ == "__main__":
     l = conductor_length(283.64,1550,0.769,0)
 
@@ -236,8 +236,8 @@ if __name__ == "__main__":
     sag_elongated = sag(283.64, Th_elongated, 0.769)
 
     print(f"Length: {l:.6f} m")
-    print(f"Tension for +{extra_length} m length: {Th_elongated:.2f} kg")
+    print(f"Tension for +{extra_length:.2f}m length: {Th_elongated:.2f} kg")
     print(f"Sag for original length: {sag(283.64, 1550, 0.769):.6f} m") 
-    print(f"Sag for +{extra_length} m length: {sag_elongated:.6f} m")    
+    print(f"Sag for +{extra_length:.2f}m length: {sag_elongated:.6f} m")    
 
 
