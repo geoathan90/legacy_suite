@@ -225,19 +225,83 @@ def Th_from_length(target_length, S, w, dh, tol=1e-10, max_iter=10000):
 
     return Th_mid
 
+def Tv_A (S, H, w, dh):
+    """
+    vertical force at left support (point A)
+    """
+    S = np.asarray(S, dtype=float)
+    H = np.asarray(H, dtype=float)
+    w = np.asarray(w, dtype=float)
+    dh = np.asarray(dh, dtype=float)
+
+    a = H / w
+    xv = -a * np.arcsinh(dh / (2.0 * a * np.sinh(S / (2.0 * a)))) + S / 2.0
+    return H*np.sinh((0-xv)/a)
+
+def Tv_B (S, H, w, dh):
+    """
+    vertical force at right support (point B)
+    """
+    S = np.asarray(S, dtype=float)
+    H = np.asarray(H, dtype=float)
+    w = np.asarray(w, dtype=float)
+    dh = np.asarray(dh, dtype=float)
+
+    a = H / w
+    xv = -a * np.arcsinh(dh / (2.0 * a * np.sinh(S / (2.0 * a)))) + S / 2.0
+    return H*np.sinh((S-xv)/a)
+
+def Taxial_A (S, H, w, dh):
+    """
+    axial force at left support (point A)
+    """
+    S = np.asarray(S, dtype=float)
+    H = np.asarray(H, dtype=float)
+    w = np.asarray(w, dtype=float)
+    dh = np.asarray(dh, dtype=float)
+
+    a = H / w
+    return np.hypot(H, Tv_A(S, H, w, dh))
+
+def Taxial_B (S, H, w, dh):
+    """
+    axial force at right support (point B)
+    """
+    S = np.asarray(S, dtype=float)
+    H = np.asarray(H, dtype=float)
+    w = np.asarray(w, dtype=float)
+    dh = np.asarray(dh, dtype=float)
+
+    a = H / w
+    return np.hypot(H, Tv_B(S, H, w, dh))   
 
 if __name__ == "__main__":
-    l = conductor_length(283.64,1550,0.769,0)
+    # l = conductor_length(283.64,1550,0.769,0)
 
-    extra_length = 0.50
+    # extra_length = 0.50
 
-    Th_elongated = Th_from_length(l + extra_length, 283.64, 0.769, 0)
+    # Th_elongated = Th_from_length(l + extra_length, 283.64, 0.769, 0)
 
-    sag_elongated = sag(283.64, Th_elongated, 0.769)
+    # sag_elongated = sag(283.64, Th_elongated, 0.769)
 
-    print(f"Length: {l:.6f} m")
-    print(f"Tension for +{extra_length:.2f}m length: {Th_elongated:.2f} kg")
-    print(f"Sag for original length: {sag(283.64, 1550, 0.769):.6f} m") 
-    print(f"Sag for +{extra_length:.2f}m length: {sag_elongated:.6f} m")    
+    # print(f"Length: {l:.6f} m")
+    # print(f"Tension for +{extra_length:.2f}m length: {Th_elongated:.2f} kg")
+    # print(f"Sag for original length: {sag(283.64, 1550, 0.769):.6f} m") 
+    # print(f"Sag for +{extra_length:.2f}m length: {sag_elongated:.6f} m")    
+
+    S = 593.70
+    dh = 131.65
+    sag_f = 27.86
+    w = 1.823
+    H = Th_from_sag_old(sag_f, S, w)
+    
+
+    print(f"Για S={S} m, dh={dh} m, sag={sag} m, η οριζόντια τάση είναι H={H:.2f} kg")
+    print(f"Η κατακόρυφη δύναμη στη στήριξη Α είναι Tv_A={Tv_A(S, H, w, dh):.2f} kg")
+    print(f"Η κατακόρυφη δύναμη στη στήριξη Β είναι Tv_B={Tv_B(S, H, w, dh):.2f} kg")
+    print(f"Η αξονική δύναμη στη στήριξη Α είναι Taxial_A={Taxial_A(S, H, w, dh):.2f} kg")
+    print(f"Η αξονική δύναμη στη στήριξη Β είναι Taxial_B={Taxial_B(S, H, w, dh):.2f} kg")  
+
+    
 
 
