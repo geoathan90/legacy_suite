@@ -64,6 +64,25 @@ def solve_for_H2(S,H1,T1,T2,w1=w,w2=w):
 
     return H2_sol
 
+def solve_for_H2_numeric(S, H1, T1, T2, w1=w, w2=w):
+    c1 = alpha * A * E * (T2 - T1) - H1 + (w1**2 * A * E * S**2) / (24.0 * H1**2)
+    c2 = S**2 * w2**2 / 24.0
+    c3 = (
+        alpha * A * E * (T2 - T1) * (S**2 * w2**2) / 24.0
+        - H1 * (S**2 * w2**2) / 24.0
+        - (w2**2 * A * E * S**2) / 24.0
+    )
+
+    roots = np.roots([1.0, c1, c2, c3])
+
+    real_roots = roots[np.isclose(roots.imag, 0.0, atol=1e-7)].real
+    positive_roots = real_roots[real_roots > 0.0]
+
+    if len(positive_roots) == 0:
+        raise RuntimeError("No positive real root found.")
+
+    return positive_roots.max()
+
 def sag_old(S, H, w):
     return w * S**2 / (8.0 * H)
 

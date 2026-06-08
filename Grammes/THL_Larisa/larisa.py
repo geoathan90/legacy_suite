@@ -1,185 +1,409 @@
-import scripts.tensions as ts
-import pandas as pd
-import numpy as np
-from scripts.eval import evaluate
-import sys
-import os
-import openpyxl
+import warnings
 from pathlib import Path
 
-#usage: print(evaluate(52740,[200,450]))
+import numpy as np
+import pandas as pd
 
-default_weight = 1.823
-w = default_weight
+import scripts.tensions as ts
+from scripts.eval import evaluate
+
+
+# ============================================================
+# USER SETTINGS
+# ============================================================
 
 HERE = Path(__file__).resolve().parent
-df = pd.read_csv(HERE / "larisa1_v2.csv")
 
-diags={"term":"31185","BA350":"31187","BA500":"31188","2000":"52740","1000":"31189"}
+INPUT_CSV = HERE / "larisa2_2nd_submission.csv"
+OUTPUT_XLSX = HERE / "outputs" / "larisa2_2nd_submission_processed.xlsx"
 
-loads = {"S5":600, "S5+8.00":600, "G5":700, "G5+8.00":700, "R5":800, "R5+8.00":800, 
-         "R5+18.00":800, "RE5":1000, "RE5+8.00":1000, "T5":1000, "T5+8.00":1000, "T5+18.00":1000,
-         "TE5":1200, "TE5+8.00":1200, "TE5+18.00":1200, "Z5":800, "Z5+8.00":800, "ZE5":960, "ZE5+8.00":960, "Z5*":800,"Z5+8.00*":800}
+# Cardinal default, in kg/m
+BASE_WEIGHT = 1.823
 
-df["max_load_kg"] = 0.0
-df['sag_0'] = 50.0
-df['tensions_0'] = 1000
+# Effective weights / factors used in the original script
+# MAX_LOAD_WEIGHT_FACTOR = 2.2662   #  0" ice and 9# wind
+ICE_WEIGHT = 2.5          #  1/4" ice - approximation
+VARI_WEIGHT_FACTOR = 2.623 # βάρος αγωγού 2η συνθήκη
 
-for i in range(len(df)):
-    
-    sign2 = df.iloc[i]["type"]
-    df.loc[i,"max_load_kg"] =loads[sign2]*2*2.2662 # 2.2662 είναι το βάρος για 0" πάγο και 9# αέρα
+BASE_TEMP = 0
 
-    sign = df.iloc[i]["span_type"]
-    df2=evaluate(diags[sign],[df.iloc[i]['span']])
-    df.loc[i,'sag_0']=float(df2.iloc[0][str(df.iloc[i]['span'])])
+DIAGRAMS = {
+    "term": "31185",
+    "BA350": "31187",
+    "BA500": "31188",
+    "2000": "52740",
+    "1000": "31189",
+    "700": "31858",
+}
 
-df['tensions_0'] = [
-    ts.Th_from_sag(sag, span, w)
-    for sag, span in zip(df['sag_0'], df['span'])
+LOADS = {
+    "S5": 600,
+    "S5+8.00": 600,
+    "G5": 700,
+    "G5+8.00": 700,
+    "R5": 800,
+    "R5+8.00": 800,
+    "R5+18.00": 800,
+    "RE5": 1000,
+    "RE5+8.00": 1000,
+    "T5": 1000,
+    "T5+8.00": 1000,
+    "T5+18.00": 1000,
+    "TE5": 1200,
+    "TE5+8.00": 1200,
+    "TE5+18.00": 1200,
+    "Z5": 800,
+    "Z5+8.00": 800,
+    "ZE5": 1600,
+    "ZE5+8.00": 1600,
+    "Z5*": 800,
+    "Z5+8.00*": 800,
+}
+
+# Hard-coded
+BASE_TENSION_OVERRIDES = {      # 0 degrees, initial
+    "BA350": 3470,
+    "BA500": 3105,
+}
+
+TENSION_50_OVERRIDES = {        # 50 degrees, final
+    "BA350": 2585,
+    "BA500": 2654,
+    "term": 2585,
+}
+
+LOAD_CASES = [
+    {"name": "-10", "temp": -10, "weight": BASE_WEIGHT},
+    {"name": "-10_ICE", "temp": -10, "weight": ICE_WEIGHT},
+    {"name": "0_ICE", "temp": 0, "weight": ICE_WEIGHT},
 ]
 
-#example df.loc[df["condition_col"] == "match_value", "target_col"] = "new_value"
 
-df.loc[df["span_type"] == "BA350", "tensions_0"] = 3470   #2585 @50C
-df.loc[df["span_type"] == "BA500", "tensions_0"] = 3105   #2585 @50C
+# ============================================================
+# SMALL HELPERS
+# ============================================================
 
-df['katakoryfo_0'] = ts.synoliko_katakoryfo(df["span"].shift(1).to_numpy(), df["height_diff"].shift(1).to_numpy(), df["tensions_0"].shift(1).to_numpy(), w,
-                                          df["span"].to_numpy(), df["height_diff"].to_numpy(), df["tensions_0"].to_numpy(), w)
-
-df['load_percentage_0'] = df['katakoryfo_0']*2*w/df['max_load_kg']*100 
-df['load_percentage_0'] = df['load_percentage_0'].round(2)
-
-
-solve_for_H2_vectorized = np.vectorize(ts.solve_for_H2)
-
-df['tensions_-10'] = solve_for_H2_vectorized(df['span'].to_numpy(), df['tensions_0'].to_numpy(), 0, -10, w, w)
-
-df['katakoryfo_-10'] = ts.synoliko_katakoryfo(df["span"].shift(1).to_numpy(), df["height_diff"].shift(1).to_numpy(), df["tensions_-10"].shift(1).to_numpy(), w,
-                                          df["span"].to_numpy(), df["height_diff"].to_numpy(), df["tensions_-10"].to_numpy(), w)
-
-df['load_percentage_-10'] = df['katakoryfo_-10']*2*w/df['max_load_kg']*100 
-df['load_percentage_-10'] = df['load_percentage_-10'].round(2)
+def normalize_text_series(s: pd.Series) -> pd.Series:
+    """Normalize text values coming from Excel/CSV input."""
+    return (
+        s.astype(str)
+        .str.strip()
+        # Greek-looking letters that can silently break dictionary lookups.
+        .str.replace("Β", "B", regex=False)
+        .str.replace("Α", "A", regex=False)
+    )
 
 
-df['tensions_-10_ICE'] = solve_for_H2_vectorized(df['span'].to_numpy(), df['tensions_0'].to_numpy(), 0, -10, w, 2.5)
+def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Accepts either the uploaded uppercase column names or the older lowercase names.
+    The rest of the script uses the standardized names.
+    """
+    df = df.copy()
+    df.columns = [c.strip().lower() for c in df.columns]
 
-df['katakoryfo_-10_ICE'] = ts.synoliko_katakoryfo(df["span"].shift(1).to_numpy(), df["height_diff"].shift(1).to_numpy(), df["tensions_-10_ICE"].shift(1).to_numpy(), 2.5,
-                                          df["span"].to_numpy(), df["height_diff"].to_numpy(), df["tensions_-10_ICE"].to_numpy(), 2.5)
+    rename_map = {
+        "tower_type": "type",
+        "tower_number": "tower_number",
+        "span": "span",
+        "span_type": "span_type",
+        "suspension_altitude": "suspension_altitude",
+        "suspension_height": "suspension_height",
+        "height_dif": "height_diff_input",   # kept only for reference; not used
+        "height_diff": "height_diff_input",  # kept only for reference; not used
+    }
 
-df['load_percentage_-10_ICE'] = df['katakoryfo_-10_ICE']*2*2.5/df['max_load_kg']*100 
-df['load_percentage_-10_ICE'] = df['load_percentage_-10_ICE'].round(2)
+    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
 
+    df["type"] = normalize_text_series(df["type"])
+    df["span_type"] = normalize_text_series(df["span_type"])
+    df["span"] = pd.to_numeric(df["span"], errors="coerce")
+    df["suspension_altitude"] = pd.to_numeric(df["suspension_altitude"], errors="coerce")
 
-
-df['tensions_0_ICE'] = solve_for_H2_vectorized(df['span'].to_numpy(), df['tensions_0'].to_numpy(), 0, 0, w, 2.5)
-
-df['katakoryfo_0_ICE'] = ts.synoliko_katakoryfo(df["span"].shift(1).to_numpy(), df["height_diff"].shift(1).to_numpy(), df["tensions_0_ICE"].shift(1).to_numpy(), 2.5,
-                                          df["span"].to_numpy(), df["height_diff"].to_numpy(), df["tensions_0_ICE"].to_numpy(), 2.5)
-
-df['load_percentage_0_ICE'] = df['katakoryfo_0_ICE']*2*2.5/df['max_load_kg']*100
-df['load_percentage_0_ICE'] = df['load_percentage_0_ICE'].round(2)
-
-df['tensions_50_theoretical'] = 50.0
-
-for i in range(len(df)):
-    sign = df.iloc[i]["span_type"]
-    df2=evaluate(diags[sign],[df.iloc[i]['span']])
-    df.loc[i,'sag_50_theoretical']=float(df2.iloc[-1][str(df.iloc[i]['span'])])
-
-# df['tensions_50_theoretical'] = ts.Th_from_sag(df['sag_50_theoretical'].to_numpy(),df['span'].to_numpy(),w)
-
-df['tensions_50_theoretical'] = [
-    ts.Th_from_sag(sag, span, w)
-    for sag, span in zip(df['sag_50_theoretical'], df['span'])
-]
-
-df.loc[df["span_type"] == "BA350", "tensions_50_theoretical"] = 2585
-df.loc[df["span_type"] == "BA500", "tensions_50_theoretical"] = 2654
-df.loc[df["span_type"] == "term", "tensions_50_theoretical"] = 2585
-
-df['katakoryfo_50_theoretical'] = ts.synoliko_katakoryfo(df["span"].shift(1).to_numpy(), df["height_diff"].shift(1).to_numpy(), df["tensions_50_theoretical"].shift(1).to_numpy(), w,
-                                          df["span"].to_numpy(), df["height_diff"].to_numpy(), df["tensions_50_theoretical"].to_numpy(), w)
-
-#monopleyro_left_vectorized = np.vectorize(ts.monopleyro_left)
-#monopleyro_right_vectorized = np.vectorize(ts.monopleyro_right)
-
-df["monopleyro_left_50_theoretical"] = ts.monopleyro_left(df["span"].shift(1).to_numpy(), df["height_diff"].shift(1).to_numpy(), df["tensions_50_theoretical"].shift(1).to_numpy(), w)
-df["monopleyro_left_50_theoretical"] = df["monopleyro_left_50_theoretical"].shift(-1)
-df["monopleyro_right_50_theoretical"] = ts.monopleyro_right(df["span"].to_numpy(), df["height_diff"].to_numpy(), df["tensions_50_theoretical"].to_numpy(), w)
-df["monopleyro_right_50_theoretical"] = df["monopleyro_right_50_theoretical"].shift(1)
-
-# df["monopleyro_left_50_theoretical"] = monopleyro_left_vectorized(df["span"].to_numpy(), df["height_diff"].to_numpy(), df["tensions_50_theoretical"].to_numpy(), w)
-# df["monopleyro_right_50_theoretical"] = monopleyro_right_vectorized(df["span"].shift(-1).to_numpy(), df["height_diff"].shift(-1).to_numpy(), df["tensions_50_theoretical"].shift(-1).to_numpy(), w)
-
-#print(df)
-
-df["vari_Τ"] = 0.0
-df["vari_Ζ"] = 0.0
-#df["vari_1"] = 0.0
-#df["vari_2"] = 0.0
-#df["vari_3"] = 0.0
-#df["vari_4"] = 0.0
-
-for i in range(len(df)):
-    if pd.isna(df.at[i, 'monopleyro_left_50_theoretical']):
-        df.at[i, 'monopleyro_left_50_theoretical'] = 0.0
-
-    if pd.isna(df.at[i, 'monopleyro_right_50_theoretical']):
-        df.at[i, 'monopleyro_right_50_theoretical'] = 0.0
-
-    sign = df.at[i, "type"]
-
-    if sign[0] == "R" or sign[0] == "G" or sign[0] == "S":
-        continue
-    else:
-        reduction1 = loads[sign] * 0.1 * 0.75
-        reduction2 = loads[sign] * 0.1 * 65/80
-        #reduction3 = loads[sing] * 0.1 * 0.46
-
-        left  = float(df.at[i, 'monopleyro_left_50_theoretical'])
-        right = float(df.at[i, 'monopleyro_right_50_theoretical'])
-
-        df.at[i,'vari_Τ'] = max(0,(left + right - reduction1) * 2 * 2.623)
-        df.at[i,'vari_Ζ'] = max(0,(left + right - reduction2) * 2 * 2.623)
-
-        # df.at[i,'vari_1'] = max(0,(left + right - reduction1) * 2 * 1.823)
-        # df.at[i,'vari_2'] = max(0,(left + right - reduction2) * 2 * 1.823)
-        # df.at[i,'vari_3'] = max(0,(left + right - reduction1) * 2 * 2.623)
-        # df.at[i,'vari_4'] = max(0,(left + right - reduction2) * 2 * 2.623)
-
-###############################################################
-###
-###  λογική για θετικό μονόπλευρο
-###
-###############################################################
-
-# df["apostasi_left"] = ts.distance_lowest_point_l(df["span"].shift(1).to_numpy(), df["height_diff"].shift(1).to_numpy(), df["tensions_50_theoretical"].shift(1).to_numpy(), w)
-# df["apostasi_right"] = ts.distance_lowest_point_r(df["span"].to_numpy(), df["height_diff"].to_numpy(), df["tensions_50_theoretical"].to_numpy(), w)
-
-# df["thetika_vari_Τ"] = 0.0
-# df["thetika_vari_Ζ"] = 0.0
-
-# for i in range(len(df)):
-
-#     sign = df.at[i, "type"]
-    
-#     left = df.at[i, "apostasi_left"]
-#     right = df.at[i, "apostasi_right"]
-
-#     if sign[0] == "R" or sign[0] == "G" or sign[0] == "S" or left<0 or right<0 or max(left,right)<loads[sign]/2:
-#         continue
-#     else:
-#         reduction1 = loads[sign] * 0.75 / 2
-#         reduction2 = loads[sign] * 65/80 / 2 
-
-#         thetiko = max(left, right)
-
-#         df.at[i,'thetika_vari_Τ'] = (thetiko - reduction1) * 2 * 2.623
-#         df.at[i,'thetika_vari_Ζ'] = (thetiko - reduction2) * 2 * 2.623  
- 
+    return df
 
 
-#### df.to_excel("larisa2_processed.xlsx", index=False) 
+def add_backward_forward_geometry(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Row i describes the FORWARD span from tower i to tower i+1.
 
-df.to_excel(HERE / "outputs" / "larisa1_v2_processed.xlsx", index=False)
+    Therefore, at tower i:
+      - backward span = span from tower i-1 to tower i = span[i-1]
+      - forward span  = span from tower i to tower i+1 = span[i]
+
+    Height differences are derived from suspension_altitude:
+      - dh_backward = altitude[i] - altitude[i-1]
+      - dh_forward  = altitude[i+1] - altitude[i]
+
+    This removes the need for a manually shifted height_diff input field.
+    """
+    df = df.copy()
+
+    alt = df["suspension_altitude"]
+
+    df["span_backward"] = df["span"].shift(1)
+    df["span_forward"] = df["span"]
+
+    df["dh_backward"] = alt - alt.shift(1)
+    df["dh_forward"] = alt.shift(-1) - alt
+
+    return df
+
+
+def add_max_load(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    df["base_load_kg"] = df["type"].map(LOADS)
+
+    unknown_types = sorted(df.loc[df["base_load_kg"].isna(), "type"].dropna().unique())
+    if unknown_types:
+        warnings.warn(f"Unknown tower types in LOADS mapping: {unknown_types}")
+
+    df["max_load_kg"] = df["base_load_kg"] * 2 * BASE_WEIGHT #MAX_LOAD_WEIGHT_FACTOR
+    return df
+
+
+def add_sags_from_diagrams(df: pd.DataFrame, *, row_name: str, output_col: str) -> pd.DataFrame:
+    """
+    Adds a sag column by calling evaluate() once per span_type instead of once per row.
+    row_name is usually "0" or "50".
+    """
+    df = df.copy()
+    df[output_col] = np.nan
+
+    for span_type, group in df.groupby("span_type", dropna=False):
+        if span_type not in DIAGRAMS:
+            warnings.warn(
+                f"No diagram mapping for span_type={span_type!r}. "
+                f"Column {output_col!r} will remain NaN for these rows."
+            )
+            continue
+
+        spans = sorted(group["span"].dropna().unique())
+        if len(spans) == 0:
+            continue
+
+        df_sags = evaluate(DIAGRAMS[span_type], spans)
+
+        if row_name not in df_sags.index:
+            warnings.warn(
+                f"Diagram {DIAGRAMS[span_type]!r} has no row {row_name!r}. "
+                f"Column {output_col!r} will remain NaN for span_type={span_type!r}."
+            )
+            continue
+
+        sag_by_span = {float(col): float(df_sags.loc[row_name, col]) for col in df_sags.columns}
+        df.loc[group.index, output_col] = group["span"].map(sag_by_span)
+
+    return df
+
+
+def add_tension_from_sag(df: pd.DataFrame, *, sag_col: str, tension_col: str, weight: float) -> pd.DataFrame:
+    df = df.copy()
+
+    df[tension_col] = [
+        ts.Th_from_sag(sag, span, weight) if pd.notna(sag) and pd.notna(span) else np.nan
+        for sag, span in zip(df[sag_col], df["span"])
+    ]
+
+    return df
+
+
+def apply_tension_overrides(df: pd.DataFrame, *, tension_col: str, overrides: dict[str, float]) -> pd.DataFrame:
+    df = df.copy()
+
+    for span_type, value in overrides.items():
+        df.loc[df["span_type"] == span_type, tension_col] = value
+
+    return df
+
+
+def vertical_participation_length(df: pd.DataFrame, *, tension_col: str, weight: float) -> np.ndarray:
+    """
+    Returns the total loaded horizontal length contributing to the tower vertical load.
+
+    For tower i:
+      backward contribution = distance from right support of backward span to its low point
+      forward contribution  = distance from left support of forward span to its low point
+    """
+    backward = ts.distance_lowest_point_l(
+        df["span_backward"].to_numpy(),
+        df["dh_backward"].to_numpy(),
+        df[tension_col].shift(1).to_numpy(),
+        weight,
+    )
+
+    forward = ts.distance_lowest_point_r(
+        df["span_forward"].to_numpy(),
+        df["dh_forward"].to_numpy(),
+        df[tension_col].to_numpy(),
+        weight,
+    )
+
+    return backward + forward
+
+
+def add_vertical_load_columns(
+    df: pd.DataFrame,
+    *,
+    case_name: str,
+    tension_col: str,
+    weight: float,
+) -> pd.DataFrame:
+    df = df.copy()
+
+    vertical_col = f"katakoryfo_{case_name}"
+    percentage_col = f"load_percentage_{case_name}"
+
+    df[vertical_col] = vertical_participation_length(df, tension_col=tension_col, weight=weight)
+    df[percentage_col] = (df[vertical_col] * 2 * weight / df["max_load_kg"] * 100).round(2)
+
+    return df
+
+
+def add_solved_temperature_case(
+    df: pd.DataFrame,
+    *,
+    case_name: str,
+    temp: float,
+    weight: float,
+    base_tension_col: str = "tensions_0",
+) -> pd.DataFrame:
+    """Solve new tensions from the base 0°C tension, then calculate vertical load percentage."""
+    df = df.copy()
+
+    tension_col = f"tensions_{case_name}"
+    solve_H2 = getattr(ts, "solve_for_H2_numeric", ts.solve_for_H2)
+
+    df[tension_col] = [
+        solve_H2(span, H1, BASE_TEMP, temp, BASE_WEIGHT, weight)
+        if pd.notna(span) and pd.notna(H1)
+        else np.nan
+        for span, H1 in zip(df["span"], df[base_tension_col])
+    ]
+
+    df = add_vertical_load_columns(
+        df,
+        case_name=case_name,
+        tension_col=tension_col,
+        weight=weight,
+    )
+
+    return df
+
+
+def add_theoretical_50_case(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    df = add_sags_from_diagrams(df, row_name="50", output_col="sag_50_theoretical")
+    df = add_tension_from_sag(
+        df,
+        sag_col="sag_50_theoretical",
+        tension_col="tensions_50_theoretical",
+        weight=BASE_WEIGHT,
+    )
+    df = apply_tension_overrides(
+        df,
+        tension_col="tensions_50_theoretical",
+        overrides=TENSION_50_OVERRIDES,
+    )
+
+    df = add_vertical_load_columns(
+        df,
+        case_name="50_theoretical",
+        tension_col="tensions_50_theoretical",
+        weight=BASE_WEIGHT,
+    )
+
+    return df
+
+
+def add_monopleyro_and_vari(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    # Backward span: tower i is the RIGHT support of span i-1.
+    df["monopleyro_backward_50_theoretical"] = ts.monopleyro_right(
+        df["span_backward"].to_numpy(),
+        df["dh_backward"].to_numpy(),
+        df["tensions_50_theoretical"].shift(1).to_numpy(),
+        BASE_WEIGHT,
+        invalid="zero",
+    )
+
+    # Forward span: tower i is the LEFT support of span i.
+    df["monopleyro_forward_50_theoretical"] = ts.monopleyro_left(
+        df["span_forward"].to_numpy(),
+        df["dh_forward"].to_numpy(),
+        df["tensions_50_theoretical"].to_numpy(),
+        BASE_WEIGHT,
+        invalid="zero",
+    )
+
+    # Keep shorter aliases if you still want left/right-style columns in Excel.
+    df["monopleyro_left_50_theoretical"] = df["monopleyro_backward_50_theoretical"]
+    df["monopleyro_right_50_theoretical"] = df["monopleyro_forward_50_theoretical"]
+
+    total_mono = (
+        df["monopleyro_backward_50_theoretical"].fillna(0.0)
+        + df["monopleyro_forward_50_theoretical"].fillna(0.0)
+    )
+
+    eligible = ~df["type"].str.startswith(("R", "G", "S"), na=False)
+
+    reduction_T = df["base_load_kg"] * 0.1 * 0.75
+    reduction_Z = df["base_load_kg"] * 0.1 * 65 / 80
+
+    df["vari_Τ"] = 0.0
+    df["vari_Ζ"] = 0.0
+
+    df.loc[eligible, "vari_Τ"] = np.maximum(
+        0.0,
+        (total_mono.loc[eligible] - reduction_T.loc[eligible]) * 2 * VARI_WEIGHT_FACTOR,
+    )
+
+    df.loc[eligible, "vari_Ζ"] = np.maximum(
+        0.0,
+        (total_mono.loc[eligible] - reduction_Z.loc[eligible]) * 2 * VARI_WEIGHT_FACTOR,
+    )
+
+    return df
+
+
+# ============================================================
+# MAIN SCRIPT
+# ============================================================
+
+def main() -> None:
+    df = pd.read_csv(INPUT_CSV)
+
+    df = standardize_columns(df)
+    df = add_backward_forward_geometry(df)
+    df = add_max_load(df)
+
+    # Base 0°C case from sag diagrams.
+    df = add_sags_from_diagrams(df, row_name="0", output_col="sag_0")
+    df = add_tension_from_sag(df, sag_col="sag_0", tension_col="tensions_0", weight=BASE_WEIGHT)
+    df = apply_tension_overrides(df, tension_col="tensions_0", overrides=BASE_TENSION_OVERRIDES)
+    df = add_vertical_load_columns(df, case_name="0", tension_col="tensions_0", weight=BASE_WEIGHT)
+
+    # Temperature / ice cases.
+    for case in LOAD_CASES:
+        df = add_solved_temperature_case(
+            df,
+            case_name=case["name"],
+            temp=case["temp"],
+            weight=case["weight"],
+        )
+
+    # 50°C theoretical case and monopleyro / vari checks.
+    df = add_theoretical_50_case(df)
+    df = add_monopleyro_and_vari(df)
+
+    OUTPUT_XLSX.parent.mkdir(parents=True, exist_ok=True)
+    df.to_excel(OUTPUT_XLSX, index=False)
+
+    print(f"Wrote: {OUTPUT_XLSX}")
+
+
+if __name__ == "__main__":
+    main()
