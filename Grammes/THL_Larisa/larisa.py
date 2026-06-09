@@ -7,6 +7,10 @@ import pandas as pd
 import scripts.tensions as ts
 from scripts.eval import evaluate
 
+from .catenary_dxf_plotter import plot_catenaries_from_file
+
+
+## usage python -m Grammes.THL_Larisa.larisa
 
 # ============================================================
 # USER SETTINGS
@@ -54,8 +58,8 @@ LOADS = {
     "TE5+18.00": 1200,
     "Z5": 800,
     "Z5+8.00": 800,
-    "ZE5": 1600,
-    "ZE5+8.00": 1600,
+    "ZE5": 1300,
+    "ZE5+8.00": 1300,
     "Z5*": 800,
     "Z5+8.00*": 800,
 }
@@ -405,5 +409,32 @@ def main() -> None:
     print(f"Wrote: {OUTPUT_XLSX}")
 
 
+def main_plot() -> None:
+
+    #########################
+    # Optional: plot catenaries 
+    #
+    #  Possible selections
+    #
+    #   "0"
+    #   "-10"
+    #   "-10_ICE"
+    #   "0_ICE"
+    #   "50_theoretical"
+    #
+    #########################
+
+    input_path = HERE / "outputs" / "larisa2_2nd_submission_processed.xlsx"
+    output_path = HERE / "outputs" / "catenaries.dxf"
+
+    summary = plot_catenaries_from_file(
+        input_path,
+        output_path=output_path,
+        load_case="-10",
+    )
+
 if __name__ == "__main__":
-    main()
+    
+    #main()
+    
+    main_plot()
