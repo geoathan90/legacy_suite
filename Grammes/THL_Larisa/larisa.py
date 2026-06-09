@@ -374,7 +374,7 @@ def add_monopleyro_and_vari(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ============================================================
-# MAIN SCRIPT
+# MAIN SCRIPTS
 # ============================================================
 
 def main() -> None:
@@ -424,13 +424,16 @@ def main_plot() -> None:
     #
     #########################
 
+    load_case = "0_ICE"
+    #output_name = f"catenaries_{load_case}.dxf"
+    
     input_path = HERE / "outputs" / "larisa2_2nd_submission_processed.xlsx"
-    output_path = HERE / "outputs" / "catenaries.dxf"
+    output_path = HERE / "outputs" / f"catenaries_{load_case}.dxf"
 
     summary = plot_catenaries_from_file(
         input_path,
         output_path=output_path,
-        load_case="-10",
+        load_case=load_case,
     )
 
 if __name__ == "__main__":
