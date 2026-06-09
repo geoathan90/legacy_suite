@@ -268,7 +268,7 @@ def Tv_B (S, H, w, dh):
 
     a = H / w
     xv = -a * np.arcsinh(dh / (2.0 * a * np.sinh(S / (2.0 * a)))) + S / 2.0
-    return H*np.sinh((S-xv)/a)
+    return -H*np.sinh((S-xv)/a)
 
 def Taxial_A (S, H, w, dh):
     """
@@ -308,19 +308,27 @@ if __name__ == "__main__":
     # print(f"Sag for original length: {sag(283.64, 1550, 0.769):.6f} m") 
     # print(f"Sag for +{extra_length:.2f}m length: {sag_elongated:.6f} m")    
 
-    S = 593.70
-    dh = 131.65
-    sag_f = 27.86
-    w = 1.823
-    H = Th_from_sag_old(sag_f, S, w)
+
+    # ###############
+    # S = 593.70
+    # dh = 131.65
+    # sag_f = 27.86
+    # w = 1.823
+    # H = Th_from_sag_old(sag_f, S, w)
     
 
-    print(f"Για S={S} m, dh={dh} m, sag={sag} m, η οριζόντια τάση είναι H={H:.2f} kg")
-    print(f"Η κατακόρυφη δύναμη στη στήριξη Α είναι Tv_A={Tv_A(S, H, w, dh):.2f} kg")
-    print(f"Η κατακόρυφη δύναμη στη στήριξη Β είναι Tv_B={Tv_B(S, H, w, dh):.2f} kg")
-    print(f"Η αξονική δύναμη στη στήριξη Α είναι Taxial_A={Taxial_A(S, H, w, dh):.2f} kg")
-    print(f"Η αξονική δύναμη στη στήριξη Β είναι Taxial_B={Taxial_B(S, H, w, dh):.2f} kg")  
+    # print(f"Για S={S} m, dh={dh} m, sag={sag} m, η οριζόντια τάση είναι H={H:.2f} kg")
+    # print(f"Η κατακόρυφη δύναμη στη στήριξη Α είναι Tv_A={Tv_A(S, H, w, dh):.2f} kg")
+    # print(f"Η κατακόρυφη δύναμη στη στήριξη Β είναι Tv_B={Tv_B(S, H, w, dh):.2f} kg")
+    # print(f"Η αξονική δύναμη στη στήριξη Α είναι Taxial_A={Taxial_A(S, H, w, dh):.2f} kg")
+    # print(f"Η αξονική δύναμη στη στήριξη Β είναι Taxial_B={Taxial_B(S, H, w, dh):.2f} kg")  
 
-    
+    S = 345
+    dh = -103.34
+    H = 4515
+    w = 2.5
+
+    print(f"Η κατακόρυφη δύναμη του ΕΝΟΣ ΥΠΟΑΓΩΓΟΥ στη στήριξη Α είναι Tv_A={Tv_A(S, H, w, dh):.2f} kg")
+    print(f"Η κατακόρυφη δύναμη του ΕΝΟΣ ΥΠΟΑΓΩΓΟΥ στη στήριξη Β είναι Tv_B={Tv_B(S, H, w, dh):.2f} kg") 
 
 
