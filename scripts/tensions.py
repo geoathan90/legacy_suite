@@ -359,27 +359,32 @@ if __name__ == "__main__":
 
     #################
 
-    # test for tower 57, total vert
+    # test for towers 22, 57, total vert
 
     temperature = -19
 
     w_bare = 1.823
     w_ice = 3.6
 
-    S1 = 215
-    S2 = 190
-    dh1 = 62.45
-    dh2 = -35.31
+    # S1 = 215              ## tower 57
+    # S2 = 190
+    # dh1 = 62.45
+    # dh2 = -35.31
+
+    S1 = 527.48
+    S2 = 220
+    dh1 = 10.9
+    dh2 = -73.03
 
     Th_initial = 3480.0
     Th_final = 3151.2 +100
 
-    E = E_initial
+    E = E_final
     Th = Th_initial
     #w_ice = w_bare #### flag for ice or not 
 
-    H1 = solve_for_H2(390.47, Th, E, A, alpha, 0, temperature, w_bare, w_ice) # 390.47
-    H2 = solve_for_H2(343.95, Th, E, A, alpha, 0, temperature, w_bare, w_ice) # 343.95
+    H1 = solve_for_H2(422.29, Th, E, A, alpha, 0, temperature, w_bare, w_ice) # 390.47/422.29 for 57/22
+    H2 = solve_for_H2(322.09, Th, E, A, alpha, 0, temperature, w_bare, w_ice) # 343.95/322.09 for 57/22
 
     vert = synoliko_katakoryfo(S1, dh1, H1, w_ice, S2, dh2, H2, w_ice)
 
@@ -400,11 +405,6 @@ if __name__ == "__main__":
 
     w_bare = 0.769
     w_ice = 1.68 # 1.11 για 1/4" πάγο, 1.68 για 1/2" πάγο
-
-    S1 = 215
-    S2 = 190
-    dh1 = 62.45
-    dh2 = -35.31
 
     A = 9.6454e-5       # διατομή
     alpha = 1.152e-5    # θερμική διαστολή
@@ -430,3 +430,4 @@ if __name__ == "__main__":
     print(f"συνολική κατακόρυφη φόρτιση ενός κερατίου: {vert*w_ice:.2f} kg")
     print(f"αξονική πίσω: {axial_left:.2f} kg")
     print(f"αξονική μπροστά: {axial_right:.2f} kg")
+
