@@ -5,16 +5,17 @@ import numpy as np
 import sys
 
 # ---- Input ----
-S =  50           # span (m)      290 316.72
-dh =  0             # elevation difference h_R - h_L (m)     -95.12  -37.54
-w = 1.303           #
+#S =  50           # span (m)      290 316.72
+#dh =  0             # elevation difference h_R - h_L (m)     -95.12  -37.54
+w = 1.823          #
 w1 = w              # kg/m
 w2 = w              #    
-A = 5.47e-4         # area (m^2)
-E = 5.132e9          # Young's modulus (Pa) |5.132e9 για Cardinal, 6.184e9 για τους άλλου αγωγούς
+A = 5.47e-4         # area (m^2) 5.47e-4 for Cardinal
+E_initial = 5.132e9  
+E_final = 6.8529e9  # Young's modulus (kg/m2) |5.132e9 για Cardinal, 6.184e9 για τους άλλου αγωγούς
 alpha = 1.935e-5    # thermal expansion (1m/°C)
-T1 = 0          # initial temp (°C)
-T2 = 40          # new temp (°C)
+T1 = 0              # initial temp (°C)
+T2 = 40             # new temp (°C)
 H1 = 2585           # initial horizontal tension (kg)   ex:2585 για τις μαλακίες τους | 1720 | 1040
 H1_old = H1         #  archive
 #H1 = float(sys.argv[1])
@@ -36,7 +37,7 @@ dh3 = -95.12
 
 ### note για Λάρισα ΙΙ: νομίζω έχουν υπολογίσει τα βάρη στους -10 με γυμνό αγωγό 
 
-def solve_for_H2(S,H1,T1,T2,w1=w,w2=w):
+def solve_for_H2(S, H1, E, A, alpha, T1, T2, w1, w2):
 
     # Coefficients
     c1 = alpha * A * E * (T2 - T1) - H1 + (w1**2 * A * E * S**2) / (24.0 * H1**2)
@@ -64,7 +65,7 @@ def solve_for_H2(S,H1,T1,T2,w1=w,w2=w):
 
     return H2_sol
 
-def solve_for_H2_numeric(S, H1, T1, T2, w1=w, w2=w):
+def solve_for_H2_numeric(S, H1, E, A, alpha, T1, T2, w1, w2):
     c1 = alpha * A * E * (T2 - T1) - H1 + (w1**2 * A * E * S**2) / (24.0 * H1**2)
     c2 = S**2 * w2**2 / 24.0
     c3 = (
@@ -295,6 +296,8 @@ def Taxial_B (S, H, w, dh):
     return np.hypot(H, Tv_B(S, H, w, dh))   
 
 if __name__ == "__main__":
+
+    ### TEST RAKITA
     # l = conductor_length(283.64,1550,0.769,0)
 
     # extra_length = 0.50
@@ -309,7 +312,7 @@ if __name__ == "__main__":
     # print(f"Sag for +{extra_length:.2f}m length: {sag_elongated:.6f} m")    
 
 
-    # ###############
+    # ###############  TEST RAKITA 2
     # S = 593.70
     # dh = 131.65
     # sag_f = 27.86
@@ -323,12 +326,107 @@ if __name__ == "__main__":
     # print(f"Η αξονική δύναμη στη στήριξη Α είναι Taxial_A={Taxial_A(S, H, w, dh):.2f} kg")
     # print(f"Η αξονική δύναμη στη στήριξη Β είναι Taxial_B={Taxial_B(S, H, w, dh):.2f} kg")  
 
-    S = 345
-    dh = -103.34
-    H = 4515
-    w = 2.5
+    #################
 
-    print(f"Η κατακόρυφη δύναμη του ΕΝΟΣ ΥΠΟΑΓΩΓΟΥ στη στήριξη Α είναι Tv_A={Tv_A(S, H, w, dh):.2f} kg")
-    print(f"Η κατακόρυφη δύναμη του ΕΝΟΣ ΥΠΟΑΓΩΓΟΥ στη στήριξη Β είναι Tv_B={Tv_B(S, H, w, dh):.2f} kg") 
+    # test for span 8/9 - support reactions
+
+    # S = 345
+    # dh = -103.34
+    # H = 4515
+    # w = 2.5
+
+    # print(f"Η κατακόρυφη δύναμη του ΕΝΟΣ ΥΠΟΑΓΩΓΟΥ στη στήριξη Α είναι Tv_A={Tv_A(S, H, w, dh):.2f} kg")
+    # print(f"Η κατακόρυφη δύναμη του ΕΝΟΣ ΥΠΟΑΓΩΓΟΥ στη στήριξη Β είναι Tv_B={Tv_B(S, H, w, dh):.2f} kg") 
+
+    #################
+
+    # test for tower 9, left side
+
+    # w_bare = 1.823
+    # w_ice = 2.623
+
+    # S = 345
+    # dh =103.34
+    # H0 = 3494.416
+    # H = solve_for_H2(S, H0, 0, -10, w_bare, w_bare)
+
+    # print(f"H: {H:.2f} kg")
+    # print(f"αριστερή πλευρά: {distance_lowest_point_l(S, dh, H, w_bare):.2f} m")
+
+    # print(1.303*1500*1500/8/204.574)
+    # print(1.303*1500*1500/8/212.9)
+    
+
+    #################
+
+    # test for tower 57, total vert
+
+    temperature = -19
+
+    w_bare = 1.823
+    w_ice = 3.6
+
+    S1 = 215
+    S2 = 190
+    dh1 = 62.45
+    dh2 = -35.31
+
+    Th_initial = 3480.0
+    Th_final = 3151.2 +100
+
+    E = E_initial
+    Th = Th_initial
+    #w_ice = w_bare #### flag for ice or not 
+
+    H1 = solve_for_H2(390.47, Th, E, A, alpha, 0, temperature, w_bare, w_ice) # 390.47
+    H2 = solve_for_H2(343.95, Th, E, A, alpha, 0, temperature, w_bare, w_ice) # 343.95
+
+    vert = synoliko_katakoryfo(S1, dh1, H1, w_ice, S2, dh2, H2, w_ice)
+
+    axial_left = Taxial_B(S1, H1, w_ice, dh1)
+    axial_right = Taxial_B(S2, H2, w_ice, dh2)
+
+    print(f"\n              ΑΓΩΓΟΣ ΦΑΣΗΣ")
+    print(f"Θερμοκρασία: {temperature}°C, βάρος αγωγού: {w_ice:.3f} kg/m, ") 
+    print(f"Μέτρο Ελαστικότητας: {E:.2e} kg/m2, Τάνυση ΒΑ στους 0°C: {Th:.2f} kg")
+    print(f"H1: {H1:.2f} kg")
+    print(f"H2: {H2:.2f} kg")
+    print(f"συνολικό κατακόρυφο: {vert.round(2)} m")
+    print(f"συνολική κατακόρυφη φόρτιση ημιγεφυρίου: {vert*w_ice*2:.2f} kg")
+    print(f"αξονική πίσω: {axial_left:.2f} kg")
+    print(f"αξονική μπροστά: {axial_right:.2f} kg")
+
+    ###############
+
+    w_bare = 0.769
+    w_ice = 1.68 # 1.11 για 1/4" πάγο, 1.68 για 1/2" πάγο
+
+    S1 = 215
+    S2 = 190
+    dh1 = 62.45
+    dh2 = -35.31
+
+    A = 9.6454e-5       # διατομή
+    alpha = 1.152e-5    # θερμική διαστολή
+    E = 19.33e9
+    Th = 1810
+    #w_ice = w_bare #### flag for ice or not 
+
+    H1 = solve_for_H2(390.47, Th, E, A, alpha, 0, temperature, w_bare, w_ice) # 390.47
+    H2 = solve_for_H2(343.95, Th, E, A, alpha, 0, temperature, w_bare, w_ice) # 343.95
+
+    vert = synoliko_katakoryfo(S1, dh1, H1, w_ice, S2, dh2, H2, w_ice)
+
+    axial_left = Taxial_B(S1, H1, w_ice, dh1)
+    axial_right = Taxial_B(S2, H2, w_ice, dh2)
 
 
+    print(f"\n              ΑΓΩΓΟΣ ΠΡΟΣΤΑΣΙΑΣ - OXI OPGW")
+    print(f"Θερμοκρασία: {temperature}°C, βάρος αγωγού: {w_ice:.3f} kg/m, ") 
+    print(f"Μέτρο Ελαστικότητας: {E:.2e} kg/m2, Τάνυση ΒΑ στους 0°C: {Th:.2f} kg")
+    print(f"H1: {H1:.2f} kg")
+    print(f"H2: {H2:.2f} kg")
+    print(f"συνολικό κατακόρυφο: {vert.round(2)} m")
+    print(f"συνολική κατακόρυφη φόρτιση ενός κερατίου: {vert*w_ice:.2f} kg")
+    print(f"αξονική πίσω: {axial_left:.2f} kg")
+    print(f"αξονική μπροστά: {axial_right:.2f} kg")

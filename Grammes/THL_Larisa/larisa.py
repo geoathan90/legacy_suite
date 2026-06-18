@@ -26,8 +26,13 @@ BASE_WEIGHT = 1.823
 
 # Effective weights / factors used in the original script
 # MAX_LOAD_WEIGHT_FACTOR = 2.2662   #  0" ice and 9# wind
-ICE_WEIGHT = 2.5          #  1/4" ice - approximation
-VARI_WEIGHT_FACTOR = 2.623 # βάρος αγωγού 2η συνθήκη
+ICE_WEIGHT = 2.5                        #  1/4" ice - approximation
+VARI_WEIGHT_FACTOR = 2.623              # βάρος αγωγού 2η συνθήκη
+
+CROSS_SECTION_AREA = 5.47e-4            # m^2, from 547 mm^2 in the original script
+YOUNG_MODULUS_INITIAL = 5.132e9         # kg/m2
+YOUNGS_MODULUS_FINAL = 6.8529e9         # kg/m2
+THERMAL_EXPANSION = 1.935e-5              # 1/°C
 
 BASE_TEMP = 0
 
@@ -65,9 +70,14 @@ LOADS = {
 }
 
 # Hard-coded
-BASE_TENSION_OVERRIDES = {      # 0 degrees, initial
+BASE_TENSION_OVERRIDES_INITIAL = {      # 0 degrees, initial
     "BA350": 3470,
     "BA500": 3105,
+}
+
+BASE_TENSION_OVERRIDES_FINAL = {      # 0 degrees, final
+    "BA350": 3151.2,
+    "BA500": 295.6,
 }
 
 TENSION_50_OVERRIDES = {        # 50 degrees, final
@@ -387,7 +397,7 @@ def main() -> None:
     # Base 0°C case from sag diagrams.
     df = add_sags_from_diagrams(df, row_name="0", output_col="sag_0")
     df = add_tension_from_sag(df, sag_col="sag_0", tension_col="tensions_0", weight=BASE_WEIGHT)
-    df = apply_tension_overrides(df, tension_col="tensions_0", overrides=BASE_TENSION_OVERRIDES)
+    df = apply_tension_overrides(df, tension_col="tensions_0", overrides=BASE_TENSION_OVERRIDES_INITIAL)
     df = add_vertical_load_columns(df, case_name="0", tension_col="tensions_0", weight=BASE_WEIGHT)
 
     # Temperature / ice cases.
