@@ -357,6 +357,41 @@ if __name__ == "__main__":
     # print(1.303*1500*1500/8/212.9)
     
 
+    # ######## test tanyseon
+    
+    # x = np.linspace(270, 900, 100)
+    # H = 6150*np.ones_like(x)
+
+    # H_neg10_4 = np.array([
+    #     solve_for_H2_numeric(S, 6150, E_final, A, alpha, -17.78, -9.5, 4.02, 2.965)
+    #     for S in x
+    # ])
+
+    # H_0_9 = np.array([
+    #     solve_for_H2_numeric(S, 6150, E_final, A, alpha, -17.78, 0, 4.02, 2.348)
+    #     for S in x
+    # ])
+
+    # H_neg19_0 = np.array([
+    #     solve_for_H2_numeric(S, 6150, E_final, A, alpha, -17.78, -19, 4.02, 1.823)
+    #     for S in x
+    # ])
+
+    # from matplotlib import pyplot as plt
+
+    # plt.figure()
+    # plt.plot(x, H)
+    # plt.plot(x, H_neg10_4)
+    # plt.plot(x, H_0_9)
+    # plt.plot(x, H_neg19_0)
+    # plt.title("Horizontal Tension")
+    # plt.xlabel("Span (m)")
+    # plt.ylabel("Tension (kg)")
+    # plt.grid()
+    # plt.yticks(np.arange(2000, 7000, 100))
+    # plt.savefig("horizontal_tension.png", dpi=300)
+
+
     #################
 
     # test for towers 22, 57, total vert
@@ -371,10 +406,15 @@ if __name__ == "__main__":
     # dh1 = 62.45
     # dh2 = -35.31
 
-    S1 = 527.48
-    S2 = 220
-    dh1 = 10.9
-    dh2 = -73.03
+    # S1 = 527.48           ## tower 22
+    # S2 = 220
+    # dh1 = 10.9
+    # dh2 = -73.03
+
+    S1 = 300                ## tower 2
+    S2 = 345
+    dh1 = 37.10
+    dh2 = -71.73
 
     Th_initial = 3480.0
     Th_final = 3151.2 +100
@@ -431,3 +471,4 @@ if __name__ == "__main__":
     print(f"αξονική πίσω: {axial_left:.2f} kg")
     print(f"αξονική μπροστά: {axial_right:.2f} kg")
 
+    

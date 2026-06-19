@@ -31,7 +31,7 @@ HEAVY_ICE_WEIGHT = 3.6                  #  1/2" ice - approximation
 
 CROSS_SECTION_AREA = 5.47e-4            # m^2, from 547 mm^2 in the original script
 YOUNG_MODULUS_INITIAL = 5.132e9         # kg/m2
-YOUNGS_MODULUS_FINAL = 6.8529e9         # kg/m2
+YOUNG_MODULUS_FINAL = 6.8529e9         # kg/m2
 THERMAL_EXPANSION = 1.935e-5            # 1/°C
 
 BASE_TEMP = 0
@@ -120,10 +120,10 @@ TENSION_50_OVERRIDES = {        # 50 degrees, final
 }
 
 LOAD_CASES = [
-    {"name": "-19_bare", "temp": -19, "weight": BASE_WEIGHT},   
+    {"name": "0_ICE", "temp": 0, "weight": ICE_WEIGHT},  
     {"name": "-10_bare", "temp": -10, "weight": BASE_WEIGHT},
     {"name": "-10_ICE", "temp": -10, "weight": ICE_WEIGHT},
-    {"name": "0_ICE", "temp": 0, "weight": ICE_WEIGHT},
+    {"name": "-19_bare", "temp": -19, "weight": BASE_WEIGHT}, 
     {"name": "-19_HEAVY_ICE", "temp": -19, "weight": HEAVY_ICE_WEIGHT},
 ]
 
@@ -258,8 +258,7 @@ def add_functional_span(df):
 
     return df
 
-
-def add_functional_span2(df):
+def _add_functional_span2(df):
     # Make a copy so that we do not modify the original dataframe in-place.
     # This is optional, but usually safer.
     df = df.copy()
@@ -426,130 +425,269 @@ def add_functional_span2(df):
     # Return the dataframe with the added functional_span column.
     return df
 
-def add_sags_from_diagrams(df: pd.DataFrame, *, row_name: str, output_col: str) -> pd.DataFrame:
+def add_sag_column_from_diagrams(
+    df: pd.DataFrame,
+    row_name: str,
+    output_col: str,
+    span_col: str = "functional_span",
+) -> pd.DataFrame:
     """
-        Adds a sag column by calling evaluate() once per span_type instead of once per row.
-        row_name is usually "0" or "50".
-    """
-    df = df.copy()
-    df[output_col] = np.nan
+        Add a sag column from the sag diagrams.
 
-    for span_type, group in df.groupby("span_type", dropna=False):
-        if span_type not in DIAGRAMS:
-            warnings.warn(
-                f"No diagram mapping for span_type={span_type!r}. "
-                f"Column {output_col!r} will remain NaN for these rows."
+        Each row provides:
+            span_type:
+                Selects which diagram to use, through the DIAGRAMS dictionary.
+
+            span_col:
+                Selects which span value to evaluate on the diagram.
+                By default this is "functional_span", not the physical "span".
+
+        Example:
+            add_sag_column_from_diagrams_simple(
+                df,
+                row_name="0",
+                output_col="sag_0",
             )
+
+        This will:
+            - read row["span_type"]
+            - find the corresponding diagram
+            - evaluate sag at row["functional_span"]
+            - store the result in row["sag_0"]
+    """
+    sag_values = []
+
+    for _, row in df.iterrows():
+        span_type = row["span_type"]
+        span_value = row[span_col]
+
+        diagram = DIAGRAMS.get(span_type)
+
+        if diagram is None or pd.isna(span_value):
+            sag_values.append(np.nan)
             continue
 
-        spans = sorted(group["span"].dropna().unique())
-        if len(spans) == 0:
-            continue
+        sag_table = evaluate(diagram, [span_value])
 
-        df_sags = evaluate(DIAGRAMS[span_type], spans)
-
-        if row_name not in df_sags.index:
+        if row_name not in sag_table.index:
             warnings.warn(
-                f"Diagram {DIAGRAMS[span_type]!r} has no row {row_name!r}. "
-                f"Column {output_col!r} will remain NaN for span_type={span_type!r}."
+                f"Diagram {diagram!r} for span_type={span_type!r} "
+                f"does not contain row {row_name!r}."
             )
+            sag_values.append(np.nan)
             continue
 
-        sag_by_span = {float(col): float(df_sags.loc[row_name, col]) for col in df_sags.columns}
-        df.loc[group.index, output_col] = group["span"].map(sag_by_span)
+        # evaluate() names the output column using str(float(span)).
+        col_name = str(float(span_value))
 
+        sag_values.append(float(sag_table.loc[row_name, col_name]))
+
+    df[output_col] = sag_values
+    return df
+
+def add_tension_from_sag(
+    df: pd.DataFrame,
+    sag_col: str,
+    tension_col: str,
+    weight: float,
+    span_col: str = "functional_span",
+) -> pd.DataFrame:
+
+    tensions = []
+
+    for sag, span in zip(df[sag_col], df[span_col]):
+        if pd.isna(sag) or pd.isna(span):
+            tensions.append(np.nan)
+        else:
+            tensions.append(ts.Th_from_sag(sag, span, weight))
+
+    df[tension_col] = tensions
     return df
 
 
-def add_tension_from_sag(df: pd.DataFrame, *, sag_col: str, tension_col: str, weight: float) -> pd.DataFrame:
-    df = df.copy()
-
-    df[tension_col] = [
-        ts.Th_from_sag(sag, span, weight) if pd.notna(sag) and pd.notna(span) else np.nan
-        for sag, span in zip(df[sag_col], df["span"])
-    ]
-
-    return df
-
-
-def apply_tension_overrides(df: pd.DataFrame, *, tension_col: str, overrides: dict[str, float]) -> pd.DataFrame:
-    df = df.copy()
-
-    for span_type, value in overrides.items():
-        df.loc[df["span_type"] == span_type, tension_col] = value
-
-    return df
-
-
-def vertical_participation_length(df: pd.DataFrame, *, tension_col: str, weight: float) -> np.ndarray:
+def apply_tension_overrides(
+    df: pd.DataFrame,
+    tension_col: str,
+    overrides: dict[str, float],
+) -> pd.DataFrame:
     """
-    Returns the total loaded horizontal length contributing to the tower vertical load.
+        Replace calculated tensions with known/manual values for selected span types.
 
-    For tower i:
-      backward contribution = distance from right support of backward span to its low point
-      forward contribution  = distance from left support of forward span to its low point
+        Example:
+            overrides = {"BA350": 3470, "BA500": 3105}
+
+        This means:
+            rows with span_type == "BA350" get tension_col = 3470
+            rows with span_type == "BA500" get tension_col = 3105
+            all other rows are left unchanged
     """
-    backward = ts.distance_lowest_point_l(
+    for span_type, tension_value in overrides.items():
+        matching_rows = (df["span_type"] == span_type)   # boolean Series: True where span_type matches, False otherwise
+        df.loc[matching_rows, tension_col] = tension_value
+
+    return df
+
+
+def katakoryfa(
+    df: pd.DataFrame,
+    case_name: str,
+    tension_col: str,
+    weight: float,
+    load_dict: dict[str, float] = LOADS,
+) -> pd.DataFrame:
+    """
+        Calculate vertical-load participation for a specific load case.
+
+        Input convention:
+            Each row i represents tower i.
+            df["span"][i] is the physical forward span from tower i to tower i+1.
+            df[tension_col][i] is the horizontal tension of that same forward span.
+
+        Geometry convention:
+            For tower i:
+                backward span = row i-1 span
+                forward span  = row i span
+
+            backward tension = df[tension_col].shift(1)
+            forward tension  = df[tension_col]
+
+        Added columns:
+            backward_meters_<case_name>
+            forward_meters_<case_name>
+            backward_kg_<case_name>
+            forward_kg_<case_name>
+            total_vert_meters_<case_name>
+            total_vert_kg_<case_name>
+            load_percentage_<case_name>
+
+        Notes:
+            The physical span geometry remains based on span_backward/span_forward.
+            The tension column may have been calculated from functional_span earlier.
+
+            This function does not add helper/capacity columns to the dataframe.
+            The tower capacity is looked up internally from load_dict.
+    """
+
+    backward_m_col = f"backward_meters_{case_name}"
+    forward_m_col = f"forward_meters_{case_name}"
+
+    backward_kg_col = f"backward_kg_{case_name}"
+    forward_kg_col = f"forward_kg_{case_name}"
+
+    total_m_col = f"total_vert_meters_{case_name}"
+    total_kg_col = f"total_vert_kg_{case_name}"
+
+    percentage_col = f"load_percentage_{case_name}"
+
+    # Tower i receives backward contribution from span i-1.
+    # According to your L/R convention, distance_lowest_point_l() gives
+    # the contribution of the backward span up to the examined tower.
+    df[backward_m_col] = ts.distance_lowest_point_l(
         df["span_backward"].to_numpy(),
         df["dh_backward"].to_numpy(),
         df[tension_col].shift(1).to_numpy(),
         weight,
     )
 
-    forward = ts.distance_lowest_point_r(
+    # Tower i receives forward contribution from span i.
+    # According to your L/R convention, distance_lowest_point_r() gives
+    # the contribution of the forward span up to the examined tower.
+    df[forward_m_col] = ts.distance_lowest_point_r(
         df["span_forward"].to_numpy(),
         df["dh_forward"].to_numpy(),
         df[tension_col].to_numpy(),
         weight,
     )
 
-    return backward + forward
+    # Convert contributing lengths to vertical load.
+    # The factor 2 preserves the previous script's two-conductor/subconductor logic.
+    df[backward_kg_col] = df[backward_m_col] * weight * 2
+    df[forward_kg_col] = df[forward_m_col] * weight * 2
 
+    df[total_m_col] = df[backward_m_col] + df[forward_m_col]
+    df[total_kg_col] = df[backward_kg_col] + df[forward_kg_col]
 
-def add_vertical_load_columns(
-    df: pd.DataFrame,
-    *,
-    case_name: str,
-    tension_col: str,
-    weight: float,
-) -> pd.DataFrame:
-    df = df.copy()
+    # Internal capacity lookup. This does NOT add a capacity column to df.
+    tower_capacity_kg = df["type"].map(load_dict)
 
-    vertical_col = f"katakoryfo_{case_name}"
-    percentage_col = f"load_percentage_{case_name}"
+    unknown_types = sorted(df.loc[tower_capacity_kg.isna(), "type"].dropna().unique())
+    if unknown_types:
+        warnings.warn(f"Unknown tower types in LOADS mapping: {unknown_types}")
 
-    df[vertical_col] = vertical_participation_length(df, tension_col=tension_col, weight=weight)
-    df[percentage_col] = (df[vertical_col] * 2 * weight / df["max_load_kg"] * 100).round(2)
+    df[percentage_col] = (df[total_kg_col] / tower_capacity_kg * 100).round(2)
 
     return df
 
 
 def add_solved_temperature_case(
     df: pd.DataFrame,
-    *,
     case_name: str,
     temp: float,
     weight: float,
     base_tension_col: str = "tensions_0",
+    span_col: str = "functional_span",
+    base_temp: float = BASE_TEMP,
+    base_weight: float = BASE_WEIGHT,
+    E: float = YOUNG_MODULUS_INITIAL,
+    A: float = CROSS_SECTION_AREA,
+    alpha: float = THERMAL_EXPANSION,
+    load_dict: dict[str, float] = LOADS,
 ) -> pd.DataFrame:
-    """Solve new tensions from the base 0°C tension, then calculate vertical load percentage."""
-    df = df.copy()
+    """
+        Solve a new temperature / weight condition from an existing base tension.
+
+        This function does two things:
+
+        1. Calculates a new horizontal tension column:
+            tensions_<case_name>
+
+        The calculation uses functional_span by default, because this is a
+        sag-tension/state-equation calculation.
+
+        2. Calls katakoryfa() to calculate the tower vertical loading columns
+        for that same load case.
+
+        Important distinction:
+            functional_span is used for the tension-state calculation.
+            physical span geometry is still used inside katakoryfa().
+    """
 
     tension_col = f"tensions_{case_name}"
+
+    # Prefer the faster numeric solver if it exists.
+    # Fall back to the symbolic/SymPy version otherwise.
     solve_H2 = getattr(ts, "solve_for_H2_numeric", ts.solve_for_H2)
 
-    df[tension_col] = [
-        solve_H2(span, H1, BASE_TEMP, temp, BASE_WEIGHT, weight)
-        if pd.notna(span) and pd.notna(H1)
-        else np.nan
-        for span, H1 in zip(df["span"], df[base_tension_col])
-    ]
+    tensions = []
 
-    df = add_vertical_load_columns(
+    for span, H1 in zip(df[span_col], df[base_tension_col]):
+
+        if pd.isna(span) or pd.isna(H1):
+            tensions.append(np.nan)
+            continue
+
+        H2 = solve_H2(
+            span,        # S: functional/ruling span for sag-tension calculation
+            H1,          # H1: starting horizontal tension
+            E,           # modulus of elasticity
+            A,           # conductor cross-sectional area
+            alpha,       # thermal expansion coefficient
+            base_temp,   # T1
+            temp,        # T2
+            base_weight, # w1
+            weight,      # w2
+        )
+
+        tensions.append(H2)
+
+    df[tension_col] = tensions
+
+    df = katakoryfa(
         df,
         case_name=case_name,
         tension_col=tension_col,
         weight=weight,
+        load_dict=load_dict,
     )
 
     return df
@@ -631,6 +769,63 @@ def add_monopleyro_and_vari(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+# ============================================================
+# EXPORT SCRIPT
+# ============================================================
+def export_formatted_excel(df: pd.DataFrame, output_path: Path) -> None:
+    """
+    Export dataframe to a formatted Excel file.
+
+    This is meant to replace:
+        df.to_excel(OUTPUT_XLSX, index=False)
+    """
+    with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
+        sheet_name = "results"
+        df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+        workbook = writer.book
+        worksheet = writer.sheets[sheet_name]
+
+        header_format = workbook.add_format({
+            "bold": True,
+            "bg_color": "#D9EAF7",
+            "border": 1,
+            "align": "center",
+            "valign": "vcenter",
+        })
+
+        default_format = workbook.add_format({})
+        meters_format = workbook.add_format({"num_format": "0.00"})
+        kg_format = workbook.add_format({"num_format": "0.00"})
+        percent_format = workbook.add_format({"num_format": "0.00"})
+
+        default_divider_format = workbook.add_format({"left": 5})
+        meters_divider_format = workbook.add_format({"num_format": "0.00", "left": 5})
+        kg_divider_format = workbook.add_format({"num_format": "0.00", "left": 5})
+        percent_divider_format = workbook.add_format({"num_format": "0.00", "left": 5})
+
+        # Header row.
+        for col_num, col_name in enumerate(df.columns):
+            worksheet.write(0, col_num, col_name, header_format)
+
+        worksheet.freeze_panes(1, 0)
+        worksheet.autofilter(0, 0, len(df), len(df.columns) - 1)
+
+        for col_num, col_name in enumerate(df.columns):
+            width = max(12, min(30, len(str(col_name)) + 2))
+
+            starts_case_group = col_name.startswith("tensions_")
+
+            if "meters" in col_name:
+                fmt = meters_divider_format if starts_case_group else meters_format
+            elif "kg" in col_name or "tensions" in col_name:
+                fmt = kg_divider_format if starts_case_group else kg_format
+            elif "percentage" in col_name:
+                fmt = percent_divider_format if starts_case_group else percent_format
+            else:
+                fmt = default_divider_format if starts_case_group else default_format
+
+            worksheet.set_column(col_num, col_num, width, fmt)
 
 # ============================================================
 # MAIN SCRIPTS
@@ -702,8 +897,27 @@ def main_test() -> None:
     df = add_span_geometry(df)
     df = add_functional_span(df)
 
+    df = add_sag_column_from_diagrams(df, row_name="0", output_col="sag_0")
+    df = add_tension_from_sag(df, sag_col="sag_0", tension_col="tensions_0", weight=BASE_WEIGHT)
+    df = apply_tension_overrides(df, tension_col="tensions_0", overrides=BASE_TENSION_OVERRIDES_INITIAL)
+    df = katakoryfa(df, case_name="0", tension_col="tensions_0", weight=BASE_WEIGHT)
+
+    for case in LOAD_CASES:
+        df = add_solved_temperature_case(
+            df,
+            case_name=case["name"],
+            temp=case["temp"],
+            weight=case["weight"],
+        )
+
+    df = add_sag_column_from_diagrams(df, row_name="50", output_col="sag_50_theoretical")
+    df = add_tension_from_sag(df, sag_col="sag_50_theoretical", tension_col="tensions_50_theoretical", weight=BASE_WEIGHT)
+    df = apply_tension_overrides(df, tension_col="tensions_50_theoretical", overrides=TENSION_50_OVERRIDES)
+    df = katakoryfa(df, case_name="50_theoretical", tension_col="tensions_50_theoretical", weight=BASE_WEIGHT)
+
     OUTPUT_XLSX.parent.mkdir(parents=True, exist_ok=True)
-    df.to_excel(OUTPUT_XLSX, index=False)
+    #df.to_excel(OUTPUT_XLSX, index=False)
+    export_formatted_excel(df, OUTPUT_XLSX)
          
 
 if __name__ == "__main__":
