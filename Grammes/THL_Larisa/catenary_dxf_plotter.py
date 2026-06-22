@@ -409,7 +409,7 @@ def plot_catenaries_to_dxf(
     draw_support_ticks: bool = False,
     y_reference: float | None = None,
     catenary_layer: str = "CATENARIES",
-    vertex_layer: str = "CATENARY_VERTEX_TICKS",
+    #vertex_layer: str = "CATENARY_VERTEX_TICKS",
     support_layer: str = "SUPPORT_TICKS",
 ) -> pd.DataFrame:
     """
@@ -468,7 +468,8 @@ def plot_catenaries_to_dxf(
         y_reference = float(valid_altitudes.iloc[0])
 
     doc = ezdxf.new("R2010")
-    ensure_layers(doc, [catenary_layer, vertex_layer, support_layer])
+    #ensure_layers(doc, [catenary_layer, vertex_layer, support_layer])
+    ensure_layers(doc, [catenary_layer, support_layer])
     msp = doc.modelspace()
 
     results: list[CatenarySpanResult] = []
@@ -555,7 +556,7 @@ def plot_catenaries_to_dxf(
                 vertical_exaggeration=vertical_exaggeration,
                 units_per_meter=units_per_meter,
                 tick_length=vertex_tick_length,
-                layer=vertex_layer,
+                layer=catenary_layer,
             )
 
         results.append(
@@ -599,6 +600,217 @@ def plot_catenaries_from_file(
         vertical_exaggeration=vertical_exaggeration,
     )
 
+def plot_catenary_cases_to_one_dxf(
+    df: pd.DataFrame,
+    *,
+    output_path: str | Path,
+    cases: list[dict],
+    vertical_exaggeration: float = VERTICAL_EXAGGERATION,
+    units_per_meter: float = UNITS_PER_METER,
+    n_segments: int = N_SEGMENTS,
+    vertex_tick_length: float = VERTEX_TICK_LENGTH,
+    support_tick_length: float = SUPPORT_TICK_LENGTH,
+    draw_vertex_ticks: bool = True,
+    draw_support_ticks: bool = False,
+    y_reference: float | None = None,
+    support_layer: str = "SUPPORT_TICKS",
+) -> pd.DataFrame:
+    """
+    Draw multiple catenary load cases into one DXF file.
+
+    Each case is drawn in its own layer:
+
+        CATENARIES_<case_name>
+
+    Expected cases format:
+        cases = [
+            {"name": "0", "weight": BASE_WEIGHT},
+            {"name": "0_ICE", "weight": ICE_WEIGHT},
+            {"name": "-10_bare", "weight": BASE_WEIGHT},
+            ...
+        ]
+
+    Vertex tick marks are drawn in the same layer as their catenary.
+    """
+
+    df = standardize_column_names(df)
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    spans = df["span"].to_numpy(dtype=float)
+
+    x_tower = np.zeros(len(df), dtype=float)
+    if len(df) > 1:
+        x_tower[1:] = np.cumsum(spans[:-1])
+
+    alt = df["suspension_altitude"].to_numpy(dtype=float)
+
+    if y_reference is None:
+        valid_altitudes = df["suspension_altitude"].dropna()
+        if valid_altitudes.empty:
+            raise ValueError("No valid suspension_altitude values found.")
+        y_reference = float(valid_altitudes.iloc[0])
+
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+
+    ensure_layers(doc, [support_layer])
+
+    results = []
+
+    # Draw support ticks only once, because supports do not change by load case.
+    if draw_support_ticks:
+        for x_i, y_i in zip(x_tower, alt):
+            if not np.isfinite(x_i) or not np.isfinite(y_i):
+                continue
+
+            add_vertical_tick(
+                msp,
+                x_real=float(x_i),
+                y_real=float(y_i),
+                y_reference=float(y_reference),
+                vertical_exaggeration=vertical_exaggeration,
+                units_per_meter=units_per_meter,
+                tick_length=support_tick_length,
+                layer=support_layer,
+            )
+
+    for case_data in cases:
+        load_case = case_data["name"]
+        weight = float(case_data["weight"])
+
+        if weight <= 0.0:
+            raise ValueError(f"Weight must be positive for load case {load_case!r}.")
+
+        tension_col = resolve_tension_column(df, load_case)
+        tension = pd.to_numeric(df[tension_col], errors="coerce").to_numpy(dtype=float)
+
+        catenary_layer = f"CATENARIES_{load_case}"
+        ensure_layers(doc, [catenary_layer])
+
+        for i in range(len(df) - 1):
+            S = spans[i]
+            H = tension[i]
+            y1 = alt[i]
+            y2 = alt[i + 1]
+            x1 = x_tower[i]
+            x2 = x1 + S
+
+            if not all(np.isfinite(v) for v in (S, H, y1, y2, x1, x2)):
+                warnings.warn(
+                    f"Skipping row {i}, case {load_case!r}: "
+                    "span/tension/altitude contains NaN or inf."
+                )
+                continue
+
+            if S <= 0.0:
+                warnings.warn(f"Skipping row {i}, case {load_case!r}: non-positive span {S!r}.")
+                continue
+
+            if H <= 0.0:
+                warnings.warn(f"Skipping row {i}, case {load_case!r}: non-positive tension {H!r}.")
+                continue
+
+            a = H / weight
+
+            try:
+                xv = catenary_vertex_x(float(x1), float(y1), float(x2), float(y2), a)
+                yv = catenary_vertex_y(float(x1), float(y1), xv, a)
+            except Exception as exc:
+                warnings.warn(
+                    f"Skipping row {i}, case {load_case!r}: "
+                    f"failed to compute catenary vertex: {exc}"
+                )
+                continue
+
+            x_start, x_end, vertex_case = choose_plot_limits(
+                float(x1),
+                float(y1),
+                float(x2),
+                float(y2),
+                xv,
+            )
+
+            x_values, y_values = sample_catenary_points(
+                x_start=x_start,
+                x_end=x_end,
+                x1=float(x1),
+                x2=float(x2),
+                xv=xv,
+                yv=yv,
+                a=a,
+                n_segments=n_segments,
+            )
+
+            dxf_points = to_dxf_points(
+                x_values,
+                y_values,
+                y_reference=float(y_reference),
+                vertical_exaggeration=vertical_exaggeration,
+                units_per_meter=units_per_meter,
+            )
+
+            msp.add_polyline3d(
+                dxf_points,
+                dxfattribs={"layer": catenary_layer},
+            )
+
+            # Vertex tick goes in the same layer as the catenary.
+            if draw_vertex_ticks:
+                add_vertical_tick(
+                    msp,
+                    x_real=xv,
+                    y_real=yv,
+                    y_reference=float(y_reference),
+                    vertical_exaggeration=vertical_exaggeration,
+                    units_per_meter=units_per_meter,
+                    tick_length=vertex_tick_length,
+                    layer=catenary_layer,
+                )
+
+            results.append(
+                CatenarySpanResult(
+                    row_index=i,
+                    x1=float(x1),
+                    y1=float(y1),
+                    x2=float(x2),
+                    y2=float(y2),
+                    span=float(S),
+                    tension=float(H),
+                    weight=float(weight),
+                    a=float(a),
+                    vertex_x=float(xv),
+                    vertex_y=float(yv),
+                    plot_x_start=float(x_start),
+                    plot_x_end=float(x_end),
+                    case=vertex_case,
+                ).__dict__ | {"load_case": load_case, "layer": catenary_layer}
+            )
+
+    doc.saveas(output_path)
+
+    return pd.DataFrame(results)
+
+def plot_catenary_cases_from_file_to_one_dxf(
+    input_path: str | Path,
+    *,
+    output_path: str | Path,
+    cases: list[dict],
+    vertical_exaggeration: float = VERTICAL_EXAGGERATION,
+) -> pd.DataFrame:
+    """
+    Convenience wrapper:
+        read processed table -> plot all catenary cases into one DXF.
+    """
+    df = read_table(input_path)
+
+    return plot_catenary_cases_to_one_dxf(
+        df,
+        output_path=output_path,
+        cases=cases,
+        vertical_exaggeration=vertical_exaggeration,
+    )
 
 # ============================================================
 # EXAMPLE DIRECT RUN

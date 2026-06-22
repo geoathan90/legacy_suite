@@ -7,7 +7,10 @@ import pandas as pd
 import scripts.tensions as ts
 from scripts.eval import evaluate
 
-from .catenary_dxf_plotter import plot_catenaries_from_file
+from .catenary_dxf_plotter import (
+    plot_catenaries_from_file,
+    plot_catenary_cases_from_file_to_one_dxf,
+)
 
 
 ## usage python -m Grammes.THL_Larisa.larisa_new
@@ -23,16 +26,24 @@ OUTPUT_XLSX = HERE / "outputs" / "test.xlsx" #"larisa2_2nd_submission_processed.
 
 # Cardinal default, in kg/m
 BASE_WEIGHT = 1.823
+BASE_WEIGHT_SW = 0.769
 
 # Effective weights / factors used in the original script
 # MAX_LOAD_WEIGHT_FACTOR = 2.2662   #  0" ice and 9# wind
 ICE_WEIGHT = 2.623                      #  1/4" ice - approximation
 HEAVY_ICE_WEIGHT = 3.6                  #  1/2" ice - approximation
 
+ICE_WEIGHT_SW = 1.11                   #  1/4" ice - approximation
+HEAVY_ICE_WEIGHT_SW = 1.68             #  1/2" ice - approximation
+
 CROSS_SECTION_AREA = 5.47e-4            # m^2, from 547 mm^2 in the original script
 YOUNG_MODULUS_INITIAL = 5.132e9         # kg/m2
 YOUNG_MODULUS_FINAL = 6.8529e9         # kg/m2
 THERMAL_EXPANSION = 1.935e-5            # 1/°C
+
+CROSS_SECTION_AREA_SW = 9.6454e-5       # m^2, from 547 mm^2 in the original script
+YOUNG_MODULUS_INITIAL_SW = 19.33e9         # kg/m2
+THERMAL_EXPANSION_SW = 1.152e-5            # 1/°C
 
 BASE_TEMP = 0
 
@@ -72,10 +83,10 @@ LOADS = {                       #### in kg
     "TE5+18.00": 7810,
     "Z5": 6470,
     "Z5+8.00": 6470,
-    "ZE5": 6470*1.5,
-    "ZE5+8.00": 6470*1.5,
-    "Z5*": 6470,
-    "Z5+8.00*": 6470,
+    "ZE5": 7810,
+    "ZE5+8.00": 7810,
+    "Z5*": 7810,
+    "Z5+8.00*": 7810,
 }
 
 LOADS_SW = {
@@ -102,6 +113,30 @@ LOADS_SW = {
     "Z5+8.00*": 1340,
 }
 
+SHIELD_WIRE_HEIGHT_OFFSETS = {
+    "S5": 21.4,
+    "S5+8.00": 21.4,
+    "G5": 21.4,
+    "G5+8.00": 21.4,
+    "R5": 22.7,
+    "R5+8.00": 22.7,
+    "R5+18.00": 22.7,
+    "RE5": 22.7,
+    "RE5+8.00": 22.7,
+    "T5": 25.2,
+    "T5+8.00": 25.2,
+    "T5+18.00": 25.2,
+    "TE5": 25.2,
+    "TE5+8.00": 25.2,
+    "TE5+18.00": 25.2,
+    "Z5": 25.2,
+    "Z5+8.00": 25.2,
+    "ZE5": 25.2,
+    "ZE5+8.00": 25.2,
+    "Z5*": 25.2,
+    "Z5+8.00*": 25.2,
+}
+
 # Hard-coded
 BASE_TENSION_OVERRIDES_INITIAL = {      # 0 degrees, initial
     "BA350": 3470,
@@ -117,6 +152,11 @@ TENSION_50_OVERRIDES = {        # 50 degrees, final
     "BA350": 2585,
     "BA500": 2665,  #2654?
     "term": 2585,
+}
+
+BASE_TENSION_OVERRIDES_SW = {
+    "BA350": 1810,
+    "BA500": 1520, 
 }
 
 LOAD_CASES = [
@@ -504,7 +544,6 @@ def add_tension_from_sag(
     df[tension_col] = tensions
     return df
 
-
 def apply_tension_overrides(
     df: pd.DataFrame,
     tension_col: str,
@@ -526,7 +565,6 @@ def apply_tension_overrides(
         df.loc[matching_rows, tension_col] = tension_value
 
     return df
-
 
 def katakoryfa(
     df: pd.DataFrame,
@@ -618,7 +656,6 @@ def katakoryfa(
 
     return df
 
-
 def add_solved_temperature_case(
     df: pd.DataFrame,
     case_name: str,
@@ -693,33 +730,7 @@ def add_solved_temperature_case(
     return df
 
 
-def add_theoretical_50_case(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
 
-    df = add_sags_from_diagrams(df, row_name="50", output_col="sag_50_theoretical")
-    df = add_tension_from_sag(
-        df,
-        sag_col="sag_50_theoretical",
-        tension_col="tensions_50_theoretical",
-        weight=BASE_WEIGHT,
-    )
-    df = apply_tension_overrides(
-        df,
-        tension_col="tensions_50_theoretical",
-        overrides=TENSION_50_OVERRIDES,
-    )
-
-    df = add_vertical_load_columns(
-        df,
-        case_name="50_theoretical",
-        tension_col="tensions_50_theoretical",
-        weight=BASE_WEIGHT,
-    )
-
-    return df
-
-
-def add_monopleyro_and_vari(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # Backward span: tower i is the RIGHT support of span i-1.
@@ -770,8 +781,9 @@ def add_monopleyro_and_vari(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # ============================================================
-# EXPORT SCRIPT
+# EXPORT SCRIPT - DO NOT TOUCH - WRITTEN BY GPT
 # ============================================================
+
 def export_formatted_excel(df: pd.DataFrame, output_path: Path) -> None:
     """
     Export dataframe to a formatted Excel file.
@@ -831,64 +843,6 @@ def export_formatted_excel(df: pd.DataFrame, output_path: Path) -> None:
 # MAIN SCRIPTS
 # ============================================================
 
-def main() -> None:
-    df = pd.read_csv(INPUT_CSV)
-
-    df = standardize_columns(df)
-    df = add_backward_forward_geometry(df)
-    df = add_max_load(df)
-
-    # Base 0°C case from sag diagrams.
-    df = add_sags_from_diagrams(df, row_name="0", output_col="sag_0")
-    df = add_tension_from_sag(df, sag_col="sag_0", tension_col="tensions_0", weight=BASE_WEIGHT)
-    df = apply_tension_overrides(df, tension_col="tensions_0", overrides=BASE_TENSION_OVERRIDES_INITIAL)
-    df = add_vertical_load_columns(df, case_name="0", tension_col="tensions_0", weight=BASE_WEIGHT)
-
-    # Temperature / ice cases.
-    for case in LOAD_CASES:
-        df = add_solved_temperature_case(
-            df,
-            case_name=case["name"],
-            temp=case["temp"],
-            weight=case["weight"],
-        )
-
-    # 50°C theoretical case and monopleyro / vari checks.
-    df = add_theoretical_50_case(df)
-    df = add_monopleyro_and_vari(df)
-
-    OUTPUT_XLSX.parent.mkdir(parents=True, exist_ok=True)
-    df.to_excel(OUTPUT_XLSX, index=False)
-
-    print(f"Wrote: {OUTPUT_XLSX}")
-
-def main_plot() -> None:
-
-    #########################
-    # Optional: plot catenaries 
-    #
-    #  Possible selections
-    #
-    #   "0"
-    #   "-10"
-    #   "-10_ICE"
-    #   "0_ICE"
-    #   "50_theoretical"
-    #
-    #########################
-
-    load_case = "0_ICE"
-    #output_name = f"catenaries_{load_case}.dxf"
-    
-    input_path = HERE / "outputs" / "larisa2_2nd_submission_processed.xlsx"
-    output_path = HERE / "outputs" / f"catenaries_{load_case}.dxf"
-
-    summary = plot_catenaries_from_file(
-        input_path,
-        output_path=output_path,
-        load_case=load_case,
-    )
-
 def main_test() -> None:
 
     df = pd.read_csv(INPUT_CSV)
@@ -919,11 +873,44 @@ def main_test() -> None:
     #df.to_excel(OUTPUT_XLSX, index=False)
     export_formatted_excel(df, OUTPUT_XLSX)
          
+def main_plot() -> None:
+    """
+    Plot all available catenary load cases into one DXF file.
+
+    The processed Excel must already exist.
+    Run main_test() first if needed.
+    """
+
+    input_path = OUTPUT_XLSX
+    output_path = HERE / "outputs" / "catenaries_all_cases.dxf"
+
+    plot_cases = [
+        {"name": "0", "weight": BASE_WEIGHT},
+        *[
+            {"name": case["name"], "weight": case["weight"]}
+            for case in LOAD_CASES
+        ],
+        {"name": "50_theoretical", "weight": BASE_WEIGHT},
+    ]
+
+    summary = plot_catenary_cases_from_file_to_one_dxf(
+        input_path,
+        output_path=output_path,
+        cases=plot_cases,
+    )
+
+    print(f"Wrote: {output_path}")
+    print()
+    print("Vertex-location cases by load case:")
+    print(
+        summary.groupby(["load_case", "case"])
+        .size()
+        .to_string()
+    )
+
 
 if __name__ == "__main__":
     
-    #main()
-    
-    #main_plot()
+    #main_test()
 
-    main_test()
+    main_plot()
