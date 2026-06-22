@@ -30,8 +30,8 @@ BASE_WEIGHT_SW = 0.769
 
 # Effective weights / factors used in the original script
 # MAX_LOAD_WEIGHT_FACTOR = 2.2662   #  0" ice and 9# wind
-ICE_WEIGHT = 2.623                      #  1/4" ice - approximation
-HEAVY_ICE_WEIGHT = 3.6                  #  1/2" ice - approximation
+ICE_WEIGHT = 2.623                      #  1/4" ice +k - approximation
+HEAVY_ICE_WEIGHT = 4.02                  #  1/2" ice +k - approximation
 
 ICE_WEIGHT_SW = 1.11                   #  1/4" ice - approximation
 HEAVY_ICE_WEIGHT_SW = 1.68             #  1/2" ice - approximation
@@ -58,8 +58,8 @@ DIAGRAMS = {
 
 DIAGRAMS_SW = {
     "term": "31191",
-    "BA350": "31192",
-    "BA500": "31193",
+    "BA350": "31191",
+    "BA500": "31191",
     "2000": "31194",
     "1000": "31859",
     "700": "31859",
@@ -159,12 +159,22 @@ BASE_TENSION_OVERRIDES_SW = {
     "BA500": 1520, 
 }
 
+TENSION_50_OVERRIDES_SW = {}
+
 LOAD_CASES = [
     {"name": "0_ICE", "temp": 0, "weight": ICE_WEIGHT},  
     {"name": "-10_bare", "temp": -10, "weight": BASE_WEIGHT},
     {"name": "-10_ICE", "temp": -10, "weight": ICE_WEIGHT},
     {"name": "-19_bare", "temp": -19, "weight": BASE_WEIGHT}, 
     {"name": "-19_HEAVY_ICE", "temp": -19, "weight": HEAVY_ICE_WEIGHT},
+]
+
+LOAD_CASES_SW = [
+    {"name": "0_ICE", "temp": 0, "weight": ICE_WEIGHT_SW},
+    {"name": "-10_bare", "temp": -10, "weight": BASE_WEIGHT_SW},
+    {"name": "-10_ICE", "temp": -10, "weight": ICE_WEIGHT_SW},
+    {"name": "-19_bare", "temp": -19, "weight": BASE_WEIGHT_SW},
+    {"name": "-19_HEAVY_ICE", "temp": -19, "weight": HEAVY_ICE_WEIGHT_SW},
 ]
 
 
@@ -470,6 +480,7 @@ def add_sag_column_from_diagrams(
     row_name: str,
     output_col: str,
     span_col: str = "functional_span",
+    diagrams: dict[str, str] = DIAGRAMS,
 ) -> pd.DataFrame:
     """
         Add a sag column from the sag diagrams.
@@ -501,7 +512,7 @@ def add_sag_column_from_diagrams(
         span_type = row["span_type"]
         span_value = row[span_col]
 
-        diagram = DIAGRAMS.get(span_type)
+        diagram = diagrams.get(span_type)
 
         if diagram is None or pd.isna(span_value):
             sag_values.append(np.nan)
@@ -566,12 +577,70 @@ def apply_tension_overrides(
 
     return df
 
+def apply_shield_wire_altitudes(
+    df: pd.DataFrame,
+    offsets: dict[str, float] = SHIELD_WIRE_HEIGHT_OFFSETS,
+) -> pd.DataFrame:
+    """
+    Adjust suspension_altitude from phase-conductor attachment level
+    to shield-wire attachment level.
+
+    The offset is selected from tower type.
+    """
+    df = df.copy()
+
+    offset = df["type"].map(offsets)
+
+    unknown_types = sorted(df.loc[offset.isna(), "type"].dropna().unique())
+    if unknown_types:
+        warnings.warn(f"Unknown tower types in SHIELD_WIRE_HEIGHT_OFFSETS: {unknown_types}")
+
+    df["suspension_altitude"] = df["suspension_altitude"] + offset
+
+    return df
+
+def warn_suspicious_catenary_inputs(
+    df: pd.DataFrame,
+    *,
+    case_name: str,
+    tension_col: str,
+    weight: float,
+) -> None:
+    """
+    Warn about rows likely to cause numerical overflow or physically suspicious catenary results.
+    """
+    H = pd.to_numeric(df[tension_col], errors="coerce")
+    a = H / weight
+
+    ratio_forward = df["span_forward"] / (2.0 * a)
+    ratio_backward = df["span_backward"] / (2.0 * H.shift(1) / weight)
+
+    suspicious = (
+        H.isna()
+        | (H <= 0.0)
+        | (a <= 0.0)
+        | (ratio_forward.abs() > 50.0)
+        | (ratio_backward.abs() > 50.0)
+    )
+
+    bad = df.loc[
+        suspicious,
+        ["tower_number", "type", "span_type", "span", "functional_span", tension_col]
+    ].copy()
+
+    if not bad.empty:
+        warnings.warn(
+            f"Suspicious catenary inputs in case {case_name!r}, column {tension_col!r}:\n"
+            f"{bad.to_string(index=False)}"
+        )
+
 def katakoryfa(
     df: pd.DataFrame,
     case_name: str,
     tension_col: str,
     weight: float,
     load_dict: dict[str, float] = LOADS,
+    quantity: float = 2.0,
 ) -> pd.DataFrame:
     """
         Calculate vertical-load participation for a specific load case.
@@ -617,6 +686,13 @@ def katakoryfa(
 
     percentage_col = f"load_percentage_{case_name}"
 
+    warn_suspicious_catenary_inputs(
+        df,
+        case_name=case_name,
+        tension_col=tension_col,
+        weight=weight,
+    )
+
     # Tower i receives backward contribution from span i-1.
     # According to your L/R convention, distance_lowest_point_l() gives
     # the contribution of the backward span up to the examined tower.
@@ -639,8 +715,8 @@ def katakoryfa(
 
     # Convert contributing lengths to vertical load.
     # The factor 2 preserves the previous script's two-conductor/subconductor logic.
-    df[backward_kg_col] = df[backward_m_col] * weight * 2
-    df[forward_kg_col] = df[forward_m_col] * weight * 2
+    df[backward_kg_col] = df[backward_m_col] * weight * quantity
+    df[forward_kg_col] = df[forward_m_col] * weight * quantity
 
     df[total_m_col] = df[backward_m_col] + df[forward_m_col]
     df[total_kg_col] = df[backward_kg_col] + df[forward_kg_col]
@@ -669,6 +745,7 @@ def add_solved_temperature_case(
     A: float = CROSS_SECTION_AREA,
     alpha: float = THERMAL_EXPANSION,
     load_dict: dict[str, float] = LOADS,
+    quantity: float = 2.0,
 ) -> pd.DataFrame:
     """
         Solve a new temperature / weight condition from an existing base tension.
@@ -725,6 +802,7 @@ def add_solved_temperature_case(
         tension_col=tension_col,
         weight=weight,
         load_dict=load_dict,
+        quantity=quantity
     )
 
     return df
@@ -780,8 +858,147 @@ def add_solved_temperature_case(
 
     return df
 
+
+def build_phase_conductor_results(df_raw: pd.DataFrame) -> pd.DataFrame:
+    df = df_raw.copy()
+
+    df = add_span_geometry(df)
+    df = add_functional_span(df)
+
+    df = add_sag_column_from_diagrams(df, row_name="0", output_col="sag_0")
+    df = add_tension_from_sag(df, sag_col="sag_0", tension_col="tensions_0", weight=BASE_WEIGHT)
+    df = apply_tension_overrides(df, tension_col="tensions_0", overrides=BASE_TENSION_OVERRIDES_INITIAL)
+    df = katakoryfa(df, case_name="0", tension_col="tensions_0", weight=BASE_WEIGHT)
+
+    for case in LOAD_CASES:
+        df = add_solved_temperature_case(
+            df,
+            case_name=case["name"],
+            temp=case["temp"],
+            weight=case["weight"],
+        )
+
+    df = add_sag_column_from_diagrams(df, row_name="50", output_col="sag_50_theoretical")
+    df = add_tension_from_sag(df, sag_col="sag_50_theoretical", tension_col="tensions_50_theoretical", weight=BASE_WEIGHT)
+    df = apply_tension_overrides(df, tension_col="tensions_50_theoretical", overrides=TENSION_50_OVERRIDES)
+    df = katakoryfa(df, case_name="50_theoretical", tension_col="tensions_50_theoretical", weight=BASE_WEIGHT)
+
+    return df
+
+def build_shield_wire_results(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    Build shield-wire sag/tension and vertical-load results.
+
+    This mirrors the phase-conductor workflow, but uses:
+        DIAGRAMS_SW
+        LOADS_SW
+        shield-wire weights
+        shield-wire mechanical properties
+        adjusted shield-wire suspension altitude
+    """
+
+    df_sw = df_raw.copy()
+
+    # Move from phase-conductor attachment altitude to shield-wire attachment altitude.
+    df_sw = apply_shield_wire_altitudes(df_sw)
+
+    # Geometry must be recalculated after the altitude adjustment.
+    df_sw = add_span_geometry(df_sw)
+
+    # Functional/ruling span logic is the same as for phase conductors.
+    df_sw = add_functional_span(df_sw)
+
+    # ========================================================
+    # Base 0°C shield-wire case
+    # ========================================================
+
+    df_sw = add_sag_column_from_diagrams(
+        df_sw,
+        row_name="0",
+        output_col="sag_0",
+        diagrams=DIAGRAMS_SW,
+    )
+
+    df_sw = add_tension_from_sag(
+        df_sw,
+        sag_col="sag_0",
+        tension_col="tensions_0",
+        weight=BASE_WEIGHT_SW,
+    )
+
+    df_sw = apply_tension_overrides(
+        df_sw,
+        tension_col="tensions_0",
+        overrides=BASE_TENSION_OVERRIDES_SW,
+    )
+
+    df_sw = katakoryfa(
+        df_sw,
+        case_name="0",
+        tension_col="tensions_0",
+        weight=BASE_WEIGHT_SW,
+        load_dict=LOADS_SW,
+        quantity=1.0,  # change to 2.0 if LOADS_SW/checking basis expects two shield wires
+    )
+
+    # ========================================================
+    # Solved shield-wire temperature / ice cases
+    # ========================================================
+
+    for case in LOAD_CASES_SW:
+        df_sw = add_solved_temperature_case(
+            df_sw,
+            case_name=case["name"],
+            temp=case["temp"],
+            weight=case["weight"],
+            base_tension_col="tensions_0",
+            base_weight=BASE_WEIGHT_SW,
+            E=YOUNG_MODULUS_INITIAL_SW,
+            A=CROSS_SECTION_AREA_SW,
+            alpha=THERMAL_EXPANSION_SW,
+            load_dict=LOADS_SW,
+            quantity=1.0,  # change to 2.0 if appropriate
+        )
+
+    # ========================================================
+    # Optional 50°C shield-wire case from diagrams
+    # ========================================================
+
+    df_sw = add_sag_column_from_diagrams(
+        df_sw,
+        row_name="50",
+        output_col="sag_50_theoretical",
+        diagrams=DIAGRAMS_SW,
+    )
+
+    df_sw = add_tension_from_sag(
+        df_sw,
+        sag_col="sag_50_theoretical",
+        tension_col="tensions_50_theoretical",
+        weight=BASE_WEIGHT_SW,
+    )
+
+    # # If you define TENSION_50_OVERRIDES_SW, use it.
+    # # If not, either skip this or set TENSION_50_OVERRIDES_SW = {}.
+    # df_sw = apply_tension_overrides(
+    #     df_sw,
+    #     tension_col="tensions_50_theoretical",
+    #     overrides=TENSION_50_OVERRIDES_SW,
+    # )
+
+    # df_sw = katakoryfa(
+    #     df_sw,
+    #     case_name="50_theoretical",
+    #     tension_col="tensions_50_theoretical",
+    #     weight=BASE_WEIGHT_SW,
+    #     load_dict=LOADS_SW,
+    #     quantity=1.0,  # change to 2.0 if appropriate
+    # )
+
+    return df_sw
+
 # ============================================================
-# EXPORT SCRIPT - DO NOT TOUCH - WRITTEN BY GPT
+# EXPORT SCRIPTS 
 # ============================================================
 
 def export_formatted_excel(df: pd.DataFrame, output_path: Path) -> None:
@@ -839,39 +1056,96 @@ def export_formatted_excel(df: pd.DataFrame, output_path: Path) -> None:
 
             worksheet.set_column(col_num, col_num, width, fmt)
 
+def format_excel_worksheet(workbook, worksheet, df: pd.DataFrame) -> None:
+    """
+    Apply the same formatting logic to one worksheet.
+    """
+
+    header_format = workbook.add_format({
+        "bold": True,
+        "bg_color": "#D9EAF7",
+        "border": 1,
+        "align": "center",
+        "valign": "vcenter",
+    })
+
+    default_format = workbook.add_format({})
+    meters_format = workbook.add_format({"num_format": "0.00"})
+    kg_format = workbook.add_format({"num_format": "0.00"})
+    percent_format = workbook.add_format({"num_format": "0.00"})
+
+    default_divider_format = workbook.add_format({"left": 5})
+    meters_divider_format = workbook.add_format({"num_format": "0.00", "left": 5})
+    kg_divider_format = workbook.add_format({"num_format": "0.00", "left": 5})
+    percent_divider_format = workbook.add_format({"num_format": "0.00", "left": 5})
+
+    for col_num, col_name in enumerate(df.columns):
+        worksheet.write(0, col_num, col_name, header_format)
+
+    worksheet.freeze_panes(1, 0)
+    worksheet.autofilter(0, 0, len(df), len(df.columns) - 1)
+
+    for col_num, col_name in enumerate(df.columns):
+        width = max(12, min(30, len(str(col_name)) + 2))
+
+        starts_case_group = col_name.startswith("tensions_")
+
+        if "meters" in col_name:
+            fmt = meters_divider_format if starts_case_group else meters_format
+        elif "kg" in col_name or "tensions" in col_name:
+            fmt = kg_divider_format if starts_case_group else kg_format
+        elif "percentage" in col_name:
+            fmt = percent_divider_format if starts_case_group else percent_format
+        else:
+            fmt = default_divider_format if starts_case_group else default_format
+
+        worksheet.set_column(col_num, col_num, width, fmt)
+
+def export_formatted_excel_multi_sheet(
+    sheets: dict[str, pd.DataFrame],
+    output_path: Path,
+) -> None:
+    """
+    Export multiple dataframes to one formatted Excel workbook.
+
+    Example:
+        export_formatted_excel_multi_sheet(
+            {
+                "phase_conductors": df_phase,
+                "shield_wires": df_sw,
+            },
+            OUTPUT_XLSX,
+        )
+    """
+    with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
+        workbook = writer.book
+
+        for sheet_name, df in sheets.items():
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+            worksheet = writer.sheets[sheet_name]
+            format_excel_worksheet(workbook, worksheet, df)
+
 # ============================================================
 # MAIN SCRIPTS
 # ============================================================
 
 def main_test() -> None:
+    df_raw = pd.read_csv(INPUT_CSV)
 
-    df = pd.read_csv(INPUT_CSV)
+    df_raw = standardize_columns(df_raw)
 
-    df = standardize_columns(df)
-    df = add_span_geometry(df)
-    df = add_functional_span(df)
-
-    df = add_sag_column_from_diagrams(df, row_name="0", output_col="sag_0")
-    df = add_tension_from_sag(df, sag_col="sag_0", tension_col="tensions_0", weight=BASE_WEIGHT)
-    df = apply_tension_overrides(df, tension_col="tensions_0", overrides=BASE_TENSION_OVERRIDES_INITIAL)
-    df = katakoryfa(df, case_name="0", tension_col="tensions_0", weight=BASE_WEIGHT)
-
-    for case in LOAD_CASES:
-        df = add_solved_temperature_case(
-            df,
-            case_name=case["name"],
-            temp=case["temp"],
-            weight=case["weight"],
-        )
-
-    df = add_sag_column_from_diagrams(df, row_name="50", output_col="sag_50_theoretical")
-    df = add_tension_from_sag(df, sag_col="sag_50_theoretical", tension_col="tensions_50_theoretical", weight=BASE_WEIGHT)
-    df = apply_tension_overrides(df, tension_col="tensions_50_theoretical", overrides=TENSION_50_OVERRIDES)
-    df = katakoryfa(df, case_name="50_theoretical", tension_col="tensions_50_theoretical", weight=BASE_WEIGHT)
+    df_phase = build_phase_conductor_results(df_raw)
+    df_sw = build_shield_wire_results(df_raw)
 
     OUTPUT_XLSX.parent.mkdir(parents=True, exist_ok=True)
-    #df.to_excel(OUTPUT_XLSX, index=False)
-    export_formatted_excel(df, OUTPUT_XLSX)
+
+    export_formatted_excel_multi_sheet(
+        {
+            "phase_conductors": df_phase,
+            "shield_wires": df_sw,
+        },
+        OUTPUT_XLSX,
+    )
          
 def main_plot() -> None:
     """
@@ -909,8 +1183,9 @@ def main_plot() -> None:
     )
 
 
+
 if __name__ == "__main__":
     
-    #main_test()
+    main_test()
 
-    main_plot()
+    #main_plot()

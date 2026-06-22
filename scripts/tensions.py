@@ -401,30 +401,30 @@ if __name__ == "__main__":
     w_bare = 1.823
     w_ice = 3.6
 
-    # S1 = 215              ## tower 57
-    # S2 = 190
-    # dh1 = 62.45
-    # dh2 = -35.31
+    S1 = 215              ## tower 57
+    S2 = 190
+    dh1 = 62.45
+    dh2 = -35.31
 
     # S1 = 527.48           ## tower 22
     # S2 = 220
     # dh1 = 10.9
     # dh2 = -73.03
 
-    S1 = 300                ## tower 2
-    S2 = 345
-    dh1 = 37.10
-    dh2 = -71.73
+    # S1 = 300                ## tower 2
+    # S2 = 345
+    # dh1 = 37.10
+    # dh2 = -71.73
 
     Th_initial = 3480.0
     Th_final = 3151.2 +100
 
-    E = E_final
+    E = E_initial
     Th = Th_initial
     #w_ice = w_bare #### flag for ice or not 
 
-    H1 = solve_for_H2(422.29, Th, E, A, alpha, 0, temperature, w_bare, w_ice) # 390.47/422.29 for 57/22
-    H2 = solve_for_H2(322.09, Th, E, A, alpha, 0, temperature, w_bare, w_ice) # 343.95/322.09 for 57/22
+    H1 = solve_for_H2(390.47, Th, E, A, alpha, 0, temperature, w_bare, w_ice) # 390.47/422.29 for 57/22
+    H2 = solve_for_H2(343.95, Th, E, A, alpha, 0, temperature, w_bare, w_ice) # 343.95/322.09 for 57/22
 
     vert = synoliko_katakoryfo(S1, dh1, H1, w_ice, S2, dh2, H2, w_ice)
 
