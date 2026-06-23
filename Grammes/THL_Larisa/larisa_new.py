@@ -21,7 +21,7 @@ from .catenary_dxf_plotter import (
 
 HERE = Path(__file__).resolve().parent
 
-INPUT_CSV = HERE / "larisa2_2nd_submission.csv"
+INPUT_CSV = HERE / "larisa2_2nd_submission_line_1.csv"
 OUTPUT_XLSX = HERE / "outputs" / "test.xlsx" #"larisa2_2nd_submission_processed.xlsx"
 
 # Cardinal default, in kg/m
@@ -1188,4 +1188,4 @@ if __name__ == "__main__":
     
     main_test()
 
-    #main_plot()
+    main_plot()

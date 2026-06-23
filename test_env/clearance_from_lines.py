@@ -357,16 +357,16 @@ def main():
     - Clearance is based on sampled vertices, so larger `N` gives a better estimate.
     """
 
-    w = 1.303
+    w = 1.823
     N = 500
 
-    gantry_height = 28.50
+    gantry_height = 19
     gantry_elevation = 0
     gantry = gantry_height + gantry_elevation 
     
-    low_bridge = 31.03
-    mid_bridge = low_bridge + 3.9
-    high_bridge = mid_bridge + 3.9
+    low_bridge = 19 + 6.89
+    mid_bridge = low_bridge + 8
+    high_bridge = mid_bridge + 8
     
     tower_elevation = 0
 
@@ -377,13 +377,13 @@ def main():
     high = high_bridge + tower_elevation + adjustment
 
     sag_overrides=[None, None]
-    sag_overrides=[0.93, 1.09]
+    sag_overrides=[2.69, 2.22]
 
     result = build_case(
         input_path= HERE/"lines_input.txt",
         diagram_names=["3289", "3136"],  #31858 = 700, 31189 = 1000
         temperature=30,
-        z_starts=[mid, high],
+        z_starts=[high, mid],
         z_ends=[gantry, gantry],
         w1=w,
         w2=w,
