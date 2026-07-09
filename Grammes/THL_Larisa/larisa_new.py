@@ -21,7 +21,7 @@ from .catenary_dxf_plotter import (
 
 HERE = Path(__file__).resolve().parent
 
-INPUT_CSV = HERE / "larisa2_2nd_submission_line_1.csv"
+INPUT_CSV = HERE / "larisa2_2nd_submission.csv"  #"larisa2_2nd_submission_line_1.csv"
 OUTPUT_XLSX = HERE / "outputs" / "test.xlsx" #"larisa2_2nd_submission_processed.xlsx"
 
 # Cardinal default, in kg/m
@@ -31,10 +31,10 @@ BASE_WEIGHT_SW = 0.769
 # Effective weights / factors used in the original script
 # MAX_LOAD_WEIGHT_FACTOR = 2.2662   #  0" ice and 9# wind
 ICE_WEIGHT = 2.623                      #  1/4" ice +k - approximation
-HEAVY_ICE_WEIGHT = 4.02                  #  1/2" ice +k - approximation
+HEAVY_ICE_WEIGHT = 4.02                 #  1/2" ice +k - approximation
 
-ICE_WEIGHT_SW = 1.11                   #  1/4" ice - approximation
-HEAVY_ICE_WEIGHT_SW = 1.68             #  1/2" ice - approximation
+ICE_WEIGHT_SW = 1.5                     #  1/4" ice +k - approximation
+HEAVY_ICE_WEIGHT_SW = 2.3               #  1/2" ice +k - approximation
 
 CROSS_SECTION_AREA = 5.47e-4            # m^2, from 547 mm^2 in the original script
 YOUNG_MODULUS_INITIAL = 5.132e9         # kg/m2

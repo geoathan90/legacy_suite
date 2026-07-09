@@ -377,7 +377,8 @@ def main():
     high = high_bridge + tower_elevation + adjustment
 
     sag_overrides=[None, None]
-    sag_overrides=[2.69, 2.22]
+    #sag_overrides=[2.69, 2.22]
+    sag_overrides=[2.93, 2.89]
 
     result = build_case(
         input_path= HERE/"lines_input.txt",
