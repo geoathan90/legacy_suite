@@ -1,0 +1,11 @@
+# Runtime dependencies
+numpy
+pandas
+scipy
+sympy
+matplotlib
+openpyxl
+ezdxf
+
+# Codespaces / VS Code notebook support
+ipykernel
