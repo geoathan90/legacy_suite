@@ -1,6 +1,6 @@
 import numpy as np
-from catenary import catenary_y
-from line import line_y
+from .catenary import catenary_y
+from .line import line_y
 
 
 def catenary_sag_vertical(cat, line):

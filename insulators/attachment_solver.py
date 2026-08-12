@@ -1,5 +1,5 @@
-from catenary import catenary, catenary_Tv_left, catenary_Tv_right
-from insulator import insulator_angle, insulator_attachment_point
+from .catenary import catenary, catenary_Tv_left, catenary_Tv_right
+from .insulator import insulator_angle, insulator_attachment_point
 
 
 def get_attachment_points_for_Th(

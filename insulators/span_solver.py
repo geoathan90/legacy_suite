@@ -1,6 +1,6 @@
-from line import line_between_points
-from sag import catenary_sag_vertical
-from attachment_solver import get_attachment_points_for_Th
+from .line import line_between_points
+from .sag import catenary_sag_vertical
+from .attachment_solver import get_attachment_points_for_Th
 
 
 def solve_span_for_target_sag(

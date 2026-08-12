@@ -1,6 +1,6 @@
-from line import line_between_points
-from catenary import catenary
-from sag import catenary_sag_vertical
+from .line import line_between_points
+from .catenary import catenary
+from .sag import catenary_sag_vertical
 
 
 def Th_for_target_sag(A, B, w, target_sag, tol=1e-6, max_iter=100):

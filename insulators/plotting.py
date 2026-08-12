@@ -1,8 +1,8 @@
 from matplotlib import pyplot as plt
-from catenary import catenary, catenary_points, catenary_low_point, catenary_y
-from line import line_y, line_between_points
-from sag import catenary_sag_vertical
-from th_solver import Th_for_target_sag
+from .catenary import catenary, catenary_points, catenary_low_point, catenary_y
+from .line import line_y, line_between_points
+from .sag import catenary_sag_vertical
+from .th_solver import Th_for_target_sag
 
 
 
@@ -110,6 +110,8 @@ def catenary_plot_with_insulators(
     w=None,
     idealized_sag=None,
     title="Catenary with insulators",
+    figsize=(16, 10),
+    dpi=120,
 ):
     """
     Plot:
@@ -137,7 +139,7 @@ def catenary_plot_with_insulators(
         show_sag = False
         show_idealized = True
 
-    plt.figure(figsize=(9, 6))
+    plt.figure(figsize=figsize, dpi=dpi)
 
     # actual conductor
     if show_actual:
