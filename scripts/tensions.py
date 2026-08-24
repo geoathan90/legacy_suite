@@ -471,4 +471,13 @@ if __name__ == "__main__":
     print(f"αξονική πίσω: {axial_left:.2f} kg")
     print(f"αξονική μπροστά: {axial_right:.2f} kg")
 
-    
+    print("#####################################################")
+
+    w = 0.44
+    span = 27
+    sag_observed = 0.29
+
+    print(Th_from_sag(sag_observed, span, w)*9.81)
+    print(Tv_A(span, 36.53, w, 0))
+    print(Taxial_A(span, 211.04, w, 0))
+    print(sag(span, 134,w))
